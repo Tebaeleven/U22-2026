@@ -1,0 +1,3 @@
+[submodule "libs/headless-vpl"]
+	path = libs/headless-vpl
+	url = git@github.com:headless-vpl/headless-vpl.git
