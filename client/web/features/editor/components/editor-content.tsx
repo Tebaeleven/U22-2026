@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react"
 import { useSearchParams } from "next/navigation"
 import {
   Mosaic,
@@ -8,22 +8,53 @@ import {
   type MosaicNode,
   type MosaicPath,
 } from "react-mosaic-component"
-import { EditorHeader } from "@/features/editor/components/editor-header"
+import { useAppDispatch, useAppSelector } from "@/lib/store"
+import {
+  setSprites,
+  selectSprite,
+  addSprite,
+  deleteSprite,
+  addCostume,
+  deleteCostume,
+  updateCostume,
+  updateSprite,
+  setCostumeIndex,
+  setCollider,
+  batchUpdatePositions,
+  saveSnapshot,
+  restoreSnapshot,
+  saveBlockData,
+  loadAllBlockData,
+} from "@/lib/store/slices/sprites"
+import { setProjectName } from "@/lib/store/slices/project"
+import { startRuntime, stopRuntime, pauseRuntime, resumeRuntime } from "@/lib/store/slices/runtime"
+import { setSelectedCategory } from "@/lib/store/slices/ui"
+import { EditorHeader, type EditorTileId, TILE_TITLES } from "@/features/editor/components/editor-header"
 import { BlockPalette } from "@/features/editor/components/block-palette"
 import { BlockWorkspace } from "@/features/editor/components/block-workspace"
-import { StagePanel } from "@/features/editor/components/stage-panel"
 import { SpriteList } from "@/features/editor/components/sprite-list"
-import { useEditorState } from "@/features/editor/hooks/use-editor-state"
+import { CostumeEditor } from "@/features/editor/components/costume-editor"
+import { SpriteColliderEditor } from "@/features/editor/components/sprite-collider-editor"
 import { useProjectSave } from "@/features/editor/hooks/use-project-save"
+import { PhaserStage, type PhaserStageHandle } from "@/features/editor/renderer/phaser-stage"
+import { DebugPanel } from "@/features/editor/components/debug-panel"
+import { buildProgramsForSprites } from "@/features/editor/engine/program-builder"
+import { Runtime } from "@/features/editor/engine/runtime"
+import {
+  getController,
+  getWorkspace,
+  openProcedureEditorForProcedure,
+} from "@/features/editor/components/block-workspace"
+import { DEFAULT_BLOCK_PROJECT_DATA } from "@/features/editor/block-editor/blocks"
+import type { BlockProjectData } from "@/features/editor/block-editor/types"
+import {
+  createDefaultCostume,
+  resolveSpriteEmoji,
+  type BlockCategoryId,
+  type ColliderDef,
+} from "@/features/editor/constants"
 
-type EditorTileId = "palette" | "workspace" | "stage" | "sprites"
-
-const TILE_TITLES: Record<EditorTileId, string> = {
-  palette: "ブロックパレット",
-  workspace: "ワークスペース",
-  stage: "ステージ",
-  sprites: "スプライト",
-}
+// ─── Mosaic レイアウト ──────────────────────────────
 
 const DEFAULT_LAYOUT: MosaicNode<EditorTileId> = {
   type: "split",
@@ -34,59 +65,364 @@ const DEFAULT_LAYOUT: MosaicNode<EditorTileId> = {
     {
       type: "split",
       direction: "column",
-      children: ["stage", "sprites"],
-      splitPercentages: [55, 45],
+      children: [
+        "stage",
+        "sprites",
+        "debug",
+      ],
+      splitPercentages: [40, 25, 35],
     },
   ],
-  splitPercentages: [15, 55, 30],
+  splitPercentages: [13, 57, 30],
 }
 
+// ─── Mosaic ツリー操作ユーティリティ ─────────────────
+
+/** 分割ノードかどうかの型ガード */
+function isSplitNode(node: MosaicNode<EditorTileId>): node is { type: "split"; direction: "row" | "column"; children: MosaicNode<EditorTileId>[]; splitPercentages?: number[] } {
+  return typeof node === "object" && "type" in node && node.type === "split"
+}
+
+/** ツリーに含まれるタイルIDを収集 */
+function getVisibleTiles(node: MosaicNode<EditorTileId> | null): Set<EditorTileId> {
+  const tiles = new Set<EditorTileId>()
+  if (!node) return tiles
+  if (typeof node === "string") {
+    tiles.add(node)
+    return tiles
+  }
+  if (isSplitNode(node)) {
+    for (const child of node.children) {
+      for (const t of getVisibleTiles(child)) tiles.add(t)
+    }
+  }
+  return tiles
+}
+
+/** ツリーからタイルを除去（分割ノードが子1つになったら折りたたむ） */
+function removeTile(
+  node: MosaicNode<EditorTileId> | null,
+  tile: EditorTileId,
+): MosaicNode<EditorTileId> | null {
+  if (!node) return null
+  if (typeof node === "string") return node === tile ? null : node
+  if (!isSplitNode(node)) return node
+  const newChildren = node.children
+    .map((child) => removeTile(child, tile))
+    .filter((c): c is MosaicNode<EditorTileId> => c !== null)
+  if (newChildren.length === 0) return null
+  if (newChildren.length === 1) return newChildren[0]
+  return { ...node, children: newChildren }
+}
+
+/** ツリーにタイルを追加（ルートの右側に25%幅で追加） */
+function addTile(
+  node: MosaicNode<EditorTileId> | null,
+  tile: EditorTileId,
+): MosaicNode<EditorTileId> {
+  if (!node) return tile
+  return {
+    type: "split",
+    direction: "row" as const,
+    children: [node, tile],
+    splitPercentages: [75, 25],
+  }
+}
+
+// ─── エディタタブ（コード / コスチューム / 当たり判定） ──
+
+type EditorTab = "code" | "costumes" | "collider"
+
 export function EditorContent() {
-  const editor = useEditorState()
+  const dispatch = useAppDispatch()
+  const sprites = useAppSelector((s) => s.sprites.list)
+  const selectedSpriteId = useAppSelector((s) => s.sprites.selectedId)
+  const blockDataMap = useAppSelector((s) => s.sprites.blockDataMap)
+  const projectName = useAppSelector((s) => s.project.name)
+  const isRunning = useAppSelector((s) => s.runtime.isRunning)
+  const isPaused = useAppSelector((s) => s.runtime.isPaused)
+  const selectedCategory = useAppSelector((s) => s.ui.selectedCategory)
+
   const searchParams = useSearchParams()
   const projectIdParam = searchParams.get("id")
-  const [mosaicLayout, setMosaicLayout] = useState<MosaicNode<EditorTileId> | null>(DEFAULT_LAYOUT)
+  const [mosaicLayout, setMosaicLayout] =
+    useState<MosaicNode<EditorTileId> | null>(DEFAULT_LAYOUT)
+
+  const visibleTiles = useMemo(() => getVisibleTiles(mosaicLayout), [mosaicLayout])
+
+  const handleToggleTile = useCallback((tile: EditorTileId) => {
+    setMosaicLayout((prev) => {
+      if (getVisibleTiles(prev).has(tile)) {
+        return removeTile(prev, tile)
+      }
+      return addTile(prev, tile)
+    })
+  }, [])
+
+  const handleResetLayout = useCallback(() => {
+    setMosaicLayout(DEFAULT_LAYOUT)
+  }, [])
+
+  // ワークスペースのタブ（コード / コスチューム / 当たり判定）
+  const [editorTab, setEditorTab] = useState<EditorTab>("code")
+
+  const stageRef = useRef<PhaserStageHandle>(null)
+  const runtimeRef = useRef<Runtime | null>(null)
+
+  const selectedSprite = sprites.find((s) => s.id === selectedSpriteId)
+  const selectedSpriteIndex = sprites.findIndex((s) => s.id === selectedSpriteId)
+
+  useEffect(() => {
+    runtimeRef.current = new Runtime()
+    return () => {
+      runtimeRef.current?.stop()
+    }
+  }, [])
 
   const project = useProjectSave({
-    projectName: editor.projectName,
-    setProjectName: editor.setProjectName,
-    sprites: editor.sprites,
-    setSprites: editor.setSprites,
+    projectName,
+    setProjectName: (name: string) => dispatch(setProjectName(name)),
+    sprites,
+    setSprites: (s) => dispatch(setSprites(s)),
+    getBlockProjectData: () => {
+      // 現在のスプライトのデータをエクスポートして、全スプライト分をまとめる
+      const currentData = getController().exportProjectData()
+      const result: Record<string, BlockProjectData> = {}
+      for (const sprite of sprites) {
+        result[sprite.id] = sprite.id === selectedSpriteId
+          ? currentData
+          : (blockDataMap[sprite.id] ?? DEFAULT_BLOCK_PROJECT_DATA)
+      }
+      return result
+    },
+    onLoadBlockProjectData: (data: Record<string, BlockProjectData>) => {
+      // 全スプライトのブロックデータを Redux に保存
+      dispatch(loadAllBlockData(data))
+      // 現在選択中のスプライトのデータをコントローラーにロード
+      const currentData = data[selectedSpriteId] ?? DEFAULT_BLOCK_PROJECT_DATA
+      getController().loadProjectData(currentData)
+    },
   })
+  const {
+    projectId,
+    isSaving,
+    isLoading,
+    saveProject,
+    shareProject,
+    loadProject,
+  } = project
 
-  // URL の ?id= からプロジェクトを読み込み
   useEffect(() => {
-    if (projectIdParam && !project.projectId && !project.isLoading) {
-      project.loadProject(projectIdParam)
+    if (projectIdParam && !projectId && !isLoading) {
+      loadProject(projectIdParam)
     }
-  }, [projectIdParam, project.projectId, project.isLoading, project.loadProject])
+  }, [projectIdParam, projectId, isLoading, loadProject])
+
+  // ─── 実行制御 ─────────────────────────────────────
+
+  const handleRun = useCallback(() => {
+    const runtime = runtimeRef.current
+    if (!runtime) return
+
+    if (runtime.isPaused) {
+      runtime.resume()
+      dispatch(resumeRuntime())
+      return
+    }
+
+    const controller = getController()
+    if (!controller) return
+
+    // 現在のスプライトのデータをエクスポート（run前に保存）
+    const currentSpriteData = controller.exportProjectData()
+    dispatch(saveBlockData({ spriteId: selectedSpriteId, data: currentSpriteData }))
+
+    // 選択中スプライトは現在のコントローラー、他は保存済みデータから個別にビルド
+    const programs = buildProgramsForSprites({
+      sprites,
+      selectedSpriteId,
+      controller,
+      blockDataMap: {
+        ...blockDataMap,
+        [selectedSpriteId]: currentSpriteData,
+      },
+    })
+
+    const hasAnyScript = Object.values(programs).some((p) => p.eventScripts.length > 0)
+    if (!hasAnyScript) return
+
+    runtime.onSpritesUpdate = (runtimeSprites) => {
+      stageRef.current?.updateSprites(runtimeSprites)
+      dispatch(
+        batchUpdatePositions(
+          runtimeSprites.map((s) => ({
+            id: s.id,
+            x: s.x,
+            y: s.y,
+            direction: s.direction,
+            costumeIndex: s.costumeIndex,
+          }))
+        )
+      )
+    }
+
+    runtime.onStop = () => {
+      dispatch(stopRuntime())
+    }
+
+    dispatch(saveSnapshot())
+    dispatch(startRuntime())
+    const scene = stageRef.current?.getScene() ?? undefined
+    runtime.start(sprites, programs, scene)
+  }, [sprites, selectedSpriteId, blockDataMap, dispatch])
+
+  const handlePause = useCallback(() => {
+    runtimeRef.current?.pause()
+    dispatch(pauseRuntime())
+  }, [dispatch])
+
+  const handleAddBlock = useCallback((defId: string) => {
+    const controller = getController()
+    const workspace = getWorkspace()
+    if (!controller || !workspace) return
+
+    setEditorTab("code")
+
+    const vp = workspace.viewport
+    const centerX = -vp.x / vp.scale + 300 / vp.scale
+    const centerY = -vp.y / vp.scale + 200 / vp.scale
+
+    const blockId = controller.addBlock(defId, centerX, centerY)
+    if (!blockId) return
+
+    const created = controller.getCreatedBlock(blockId)
+    if (created?.state.def.source.kind !== "custom-define") return
+
+    const popupX = Math.max(24, window.innerWidth / 2 - 180)
+    const popupY = Math.max(24, window.innerHeight / 2 - 180)
+    openProcedureEditorForProcedure(
+      created.state.def.source.procedureId,
+      popupX,
+      popupY
+    )
+  }, [])
+
+  const handleStop = useCallback(() => {
+    runtimeRef.current?.stop()
+    dispatch(stopRuntime())
+    dispatch(restoreSnapshot())
+  }, [dispatch])
+
+  // ─── コスチューム操作 ─────────────────────────────
+
+  const handleAddCostume = useCallback(
+    (spriteId: string) => {
+      const sprite = sprites.find((s) => s.id === spriteId)
+      const spriteIndex = sprites.findIndex((s) => s.id === spriteId)
+      const idx = sprite ? sprite.costumes.length + 1 : 1
+      const emoji = resolveSpriteEmoji(sprite, Math.max(spriteIndex, 0))
+      const costume = createDefaultCostume(`コスチューム${idx}`, emoji)
+      dispatch(addCostume({ spriteId, costume }))
+      // 新しいコスチュームを選択してコスチュームタブを開く
+      dispatch(setCostumeIndex({ spriteId, index: sprite ? sprite.costumes.length : 0 }))
+      setEditorTab("costumes")
+    },
+    [sprites, dispatch]
+  )
+
+  const handleDeleteCostume = useCallback(
+    (spriteId: string, costumeId: string) => {
+      dispatch(deleteCostume({ spriteId, costumeId }))
+    },
+    [dispatch]
+  )
+
+  const handleSelectCostume = useCallback(
+    (spriteId: string, index: number) => {
+      dispatch(setCostumeIndex({ spriteId, index }))
+    },
+    [dispatch]
+  )
+
+  const handleSetCollider = useCallback(
+    (spriteId: string, collider: ColliderDef) => {
+      dispatch(setCollider({ spriteId, collider }))
+    },
+    [dispatch]
+  )
+
+  // お絵描きキャンバスからの自動保存
+  const handleSaveCostume = useCallback(
+    (costumeId: string, dataUrl: string, width: number, height: number) => {
+      if (!selectedSpriteId) return
+      dispatch(
+        updateCostume({
+          spriteId: selectedSpriteId,
+          costumeId,
+          changes: { dataUrl, width, height },
+        })
+      )
+    },
+    [selectedSpriteId, dispatch]
+  )
+
+  // ─── タイル描画 ───────────────────────────────────
 
   const renderTile = useCallback(
     (id: EditorTileId, path: MosaicPath) => {
       const content: Record<EditorTileId, React.ReactNode> = {
         palette: (
           <BlockPalette
-            selectedCategory={editor.selectedCategory}
-            onSelectCategory={editor.setSelectedCategory}
+            selectedCategory={selectedCategory}
+            onSelectCategory={(cat: BlockCategoryId) =>
+              dispatch(setSelectedCategory(cat))
+            }
+            onAddBlock={handleAddBlock}
           />
         ),
-        workspace: <BlockWorkspace />,
+        workspace: (
+          <WorkspaceWithTabs
+            editorTab={editorTab}
+            onTabChange={setEditorTab}
+            selectedSprite={selectedSprite}
+            selectedSpriteId={selectedSpriteId}
+            selectedSpriteIndex={selectedSpriteIndex}
+            onAddCostume={() => selectedSpriteId && handleAddCostume(selectedSpriteId)}
+            onDeleteCostume={(costumeId) =>
+              selectedSpriteId && handleDeleteCostume(selectedSpriteId, costumeId)
+            }
+            onSelectCostume={(idx) =>
+              selectedSpriteId && handleSelectCostume(selectedSpriteId, idx)
+            }
+            onSetCollider={(collider) =>
+              selectedSpriteId && handleSetCollider(selectedSpriteId, collider)
+            }
+            onSaveCostume={handleSaveCostume}
+            runtimeRef={runtimeRef}
+          />
+        ),
         stage: (
-          <StagePanel
-            sprites={editor.sprites}
-            isRunning={editor.isRunning}
-            onSaveThumbnail={project.projectId ? project.saveThumbnail : undefined}
+          <PhaserStage
+            ref={stageRef}
+            sprites={sprites}
+            isRunning={isRunning}
+            selectedSpriteId={selectedSpriteId}
+            onSelectSprite={(id) => dispatch(selectSprite(id))}
+            onSpritePositionChange={(id, x, y) =>
+              dispatch(updateSprite({ id, changes: { x, y } }))
+            }
           />
         ),
         sprites: (
           <SpriteList
-            sprites={editor.sprites}
-            selectedSpriteId={editor.selectedSpriteId}
-            onSelectSprite={editor.setSelectedSpriteId}
-            onAddSprite={editor.addSprite}
-            onDeleteSprite={editor.deleteSprite}
+            sprites={sprites}
+            selectedSpriteId={selectedSpriteId}
+            onSelectSprite={(id: string) => dispatch(selectSprite(id))}
+            onAddSprite={() => dispatch(addSprite())}
+            onDeleteSprite={(id: string) => dispatch(deleteSprite(id))}
           />
         ),
+        debug: <DebugPanel runtimeRef={runtimeRef} />,
       }
 
       return (
@@ -99,10 +435,25 @@ export function EditorContent() {
         </MosaicWindow>
       )
     },
-    [editor, project],
+    [
+      sprites,
+      selectedSpriteId,
+      selectedSprite,
+      selectedSpriteIndex,
+      selectedCategory,
+      editorTab,
+      dispatch,
+      handleAddBlock,
+      handleAddCostume,
+      handleDeleteCostume,
+      handleSelectCostume,
+      handleSetCollider,
+      handleSaveCostume,
+      isRunning,
+    ]
   )
 
-  if (project.isLoading) {
+  if (isLoading) {
     return (
       <div className="flex h-screen items-center justify-center">
         <p className="text-muted-foreground">読み込み中...</p>
@@ -113,14 +464,19 @@ export function EditorContent() {
   return (
     <>
       <EditorHeader
-        projectName={editor.projectName}
-        onProjectNameChange={editor.setProjectName}
-        isRunning={editor.isRunning}
-        onRun={editor.handleRun}
-        onStop={editor.handleStop}
-        isSaving={project.isSaving}
-        onSave={project.saveProject}
-        onShare={project.shareProject}
+        projectName={projectName}
+        onProjectNameChange={(name) => dispatch(setProjectName(name))}
+        isRunning={isRunning}
+        isPaused={isPaused}
+        onRun={handleRun}
+        onPause={handlePause}
+        onStop={handleStop}
+        isSaving={isSaving}
+        onSave={saveProject}
+        onShare={shareProject}
+        visibleTiles={visibleTiles}
+        onToggleTile={handleToggleTile}
+        onResetLayout={handleResetLayout}
       />
 
       <div className="flex-1 min-h-0">
@@ -131,5 +487,118 @@ export function EditorContent() {
         />
       </div>
     </>
+  )
+}
+
+// ─── ワークスペース（コード / コスチューム / 当たり判定）─
+
+function WorkspaceWithTabs({
+  editorTab,
+  onTabChange,
+  selectedSprite,
+  selectedSpriteId,
+  selectedSpriteIndex,
+  onAddCostume,
+  onDeleteCostume,
+  onSelectCostume,
+  onSetCollider,
+  onSaveCostume,
+  runtimeRef,
+}: {
+  editorTab: EditorTab
+  onTabChange: (tab: EditorTab) => void
+  selectedSprite: import("@/features/editor/constants").SpriteDef | undefined
+  selectedSpriteId: string | null
+  selectedSpriteIndex: number
+  onAddCostume: () => void
+  onDeleteCostume: (costumeId: string) => void
+  onSelectCostume: (index: number) => void
+  onSetCollider: (collider: ColliderDef) => void
+  onSaveCostume: (costumeId: string, dataUrl: string, width: number, height: number) => void
+  runtimeRef: RefObject<Runtime | null>
+}) {
+  return (
+    <div className="flex flex-col h-full">
+      {/* タブバー */}
+      <div className="flex border-b border-gray-200 bg-gray-50 shrink-0">
+        <button
+          onClick={() => onTabChange("code")}
+          className={`px-4 py-1.5 text-xs font-medium cursor-pointer transition-colors ${
+            editorTab === "code"
+              ? "border-b-2 border-[#4d97ff] text-[#4d97ff] bg-white"
+              : "text-gray-500 hover:text-gray-700"
+          }`}
+        >
+          コード
+        </button>
+        <button
+          onClick={() => onTabChange("costumes")}
+          className={`px-4 py-1.5 text-xs font-medium cursor-pointer transition-colors ${
+            editorTab === "costumes"
+              ? "border-b-2 border-[#9966FF] text-[#9966FF] bg-white"
+              : "text-gray-500 hover:text-gray-700"
+          }`}
+        >
+          コスチューム
+        </button>
+        <button
+          onClick={() => onTabChange("collider")}
+          className={`px-4 py-1.5 text-xs font-medium cursor-pointer transition-colors ${
+            editorTab === "collider"
+              ? "border-b-2 border-[#4d97ff] text-[#4d97ff] bg-white"
+              : "text-gray-500 hover:text-gray-700"
+          }`}
+        >
+          当たり判定
+        </button>
+      </div>
+
+      {/* タブ内容 */}
+      <div className="flex-1 min-h-0 relative">
+        <div className={editorTab === "code" ? "h-full" : "hidden h-full"}>
+          <BlockWorkspace
+            runtimeRef={runtimeRef}
+            selectedSpriteId={selectedSpriteId}
+            isActive={editorTab === "code"}
+          />
+        </div>
+
+        <div className={editorTab === "costumes" ? "h-full" : "hidden h-full"}>
+          {selectedSprite ? (
+            <CostumeEditor
+              sprite={selectedSprite}
+              spriteIndex={selectedSpriteIndex}
+              onAddCostume={onAddCostume}
+              onDeleteCostume={onDeleteCostume}
+              onSelectCostume={onSelectCostume}
+              onSaveCostume={onSaveCostume}
+              onAutoEstimateCollider={(bbox) =>
+                onSetCollider({ ...selectedSprite.collider, ...bbox })
+              }
+            />
+          ) : (
+            <div className="flex items-center justify-center h-full text-gray-400 text-sm">
+              スプライトを選択してください
+            </div>
+          )}
+        </div>
+
+        <div className={editorTab === "collider" ? "h-full" : "hidden h-full"}>
+          {selectedSprite ? (
+            <SpriteColliderEditor
+              sprite={selectedSprite}
+              onSetCollider={onSetCollider}
+              currentCostumeDataUrl={
+                selectedSprite.costumes[selectedSprite.currentCostumeIndex]?.dataUrl
+              }
+            />
+          ) : (
+            <div className="flex items-center justify-center h-full text-gray-400 text-sm">
+              スプライトを選択してください
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
   )
 }

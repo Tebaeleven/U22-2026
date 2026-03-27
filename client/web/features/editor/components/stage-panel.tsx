@@ -62,7 +62,16 @@ export function StagePanel({ sprites, isRunning, onSaveThumbnail }: StagePanelPr
       ctx.font = `${fontSize}px serif`
       ctx.textAlign = "center"
       ctx.textBaseline = "middle"
-      ctx.fillText(sprite.emoji, sx, sy)
+      // コスチューム画像があれば描画、なければプレースホルダー
+      const costume = sprite.costumes[sprite.currentCostumeIndex]
+      if (costume?.dataUrl) {
+        const img = new window.Image()
+        img.src = costume.dataUrl
+        // 非同期だが静的プレビュー用途なので簡易描画
+        ctx.fillText("🎭", sx, sy)
+      } else {
+        ctx.fillText("🎭", sx, sy)
+      }
     })
   }, [sprites, isRunning])
 

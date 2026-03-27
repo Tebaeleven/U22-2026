@@ -1,77 +1,72 @@
+import type { BlockCategory } from "./block-editor/types"
+
 // Scratch準拠のブロックカテゴリ色
-export const BLOCK_CATEGORIES = [
+export const BLOCK_CATEGORIES: { id: BlockCategory; name: string; color: string }[] = [
+  { id: "events", name: "イベント", color: "#FFBF00" },
   { id: "motion", name: "動き", color: "#4C97FF" },
   { id: "looks", name: "見た目", color: "#9966FF" },
-  { id: "sound", name: "音", color: "#CF63CF" },
-  { id: "events", name: "イベント", color: "#FFBF00" },
   { id: "control", name: "制御", color: "#FFAB19" },
   { id: "sensing", name: "調べる", color: "#5CB1D6" },
   { id: "operators", name: "演算", color: "#59C059" },
   { id: "variables", name: "変数", color: "#FF8C1A" },
-] as const
-
-export type BlockCategoryId = (typeof BLOCK_CATEGORIES)[number]["id"]
-
-// ブロック定義
-export interface BlockDef {
-  id: string
-  categoryId: BlockCategoryId
-  label: string
-}
-
-export const MOCK_BLOCKS: BlockDef[] = [
-  // 動き
-  { id: "move_steps", categoryId: "motion", label: "10歩動かす" },
-  { id: "turn_right", categoryId: "motion", label: "15度回す ↻" },
-  { id: "turn_left", categoryId: "motion", label: "15度回す ↺" },
-  { id: "go_to_xy", categoryId: "motion", label: "x:0 y:0 へ行く" },
-  { id: "glide_to", categoryId: "motion", label: "1秒でx:0 y:0 へ滑る" },
-  { id: "change_x", categoryId: "motion", label: "x座標を10ずつ変える" },
-  { id: "change_y", categoryId: "motion", label: "y座標を10ずつ変える" },
-  // 見た目
-  { id: "say", categoryId: "looks", label: "Hello!と言う" },
-  { id: "say_for", categoryId: "looks", label: "Hello!と2秒言う" },
-  { id: "show", categoryId: "looks", label: "表示する" },
-  { id: "hide", categoryId: "looks", label: "隠す" },
-  { id: "change_size", categoryId: "looks", label: "大きさを10ずつ変える" },
-  // 音
-  { id: "play_sound", categoryId: "sound", label: "ニャーの音を鳴らす" },
-  { id: "stop_sounds", categoryId: "sound", label: "すべての音を止める" },
-  { id: "change_volume", categoryId: "sound", label: "音量を-10ずつ変える" },
-  // イベント
-  { id: "when_flag", categoryId: "events", label: "🏴 が押されたとき" },
-  { id: "when_key", categoryId: "events", label: "スペースキーが押されたとき" },
-  { id: "when_clicked", categoryId: "events", label: "このスプライトが押されたとき" },
-  // 制御
-  { id: "wait", categoryId: "control", label: "1秒待つ" },
-  { id: "repeat", categoryId: "control", label: "10回繰り返す" },
-  { id: "forever", categoryId: "control", label: "ずっと" },
-  { id: "if_then", categoryId: "control", label: "もし〜なら" },
-  { id: "if_else", categoryId: "control", label: "もし〜なら / でなければ" },
-  // 調べる
-  { id: "touching", categoryId: "sensing", label: "マウスのポインターに触れた" },
-  { id: "ask", categoryId: "sensing", label: "あなたの名前は？と聞いて待つ" },
-  { id: "mouse_x", categoryId: "sensing", label: "マウスのx座標" },
-  // 演算
-  { id: "add", categoryId: "operators", label: "◯ + ◯" },
-  { id: "subtract", categoryId: "operators", label: "◯ - ◯" },
-  { id: "multiply", categoryId: "operators", label: "◯ * ◯" },
-  { id: "random", categoryId: "operators", label: "1から10までの乱数" },
-  // 変数
-  { id: "set_var", categoryId: "variables", label: "変数を0にする" },
-  { id: "change_var", categoryId: "variables", label: "変数を1ずつ変える" },
-  { id: "show_var", categoryId: "variables", label: "変数を表示する" },
+  { id: "lists", name: "リスト", color: "#FF661A" },
+  { id: "myblocks", name: "マイブロック", color: "#FF6680" },
+  { id: "physics", name: "物理", color: "#FF4D6A" },
 ]
 
-// ステージサイズ
-export const STAGE_WIDTH = 480
-export const STAGE_HEIGHT = 360
+export type BlockCategoryId = BlockCategory
 
-// スプライト定義
+// ステージサイズ
+export const STAGE_WIDTH = 1920
+export const STAGE_HEIGHT = 1080
+
+// ─── コスチューム ──────────────────────────────────
+
+export interface Costume {
+  id: string
+  name: string
+  /** PNG の base64 データURL */
+  dataUrl: string
+  width: number
+  height: number
+}
+
+export const DEFAULT_COSTUME_SIZE = 120
+export const DEFAULT_SPRITE_EMOJIS = [
+  "🐱",
+  "🐶",
+  "🐰",
+  "🐻",
+  "🦊",
+  "🐼",
+  "🐸",
+  "🐵",
+] as const
+
+// ─── 当たり判定 ────────────────────────────────────
+
+export type ColliderType = "bbox" | "circle"
+
+export interface ColliderDef {
+  type: ColliderType
+  /** bbox 用: コスチュームに対するオフセット・サイズ（省略時はコスチューム全体） */
+  offsetX?: number
+  offsetY?: number
+  width?: number
+  height?: number
+  /** circle 用: 半径（省略時はコスチュームの短辺の半分） */
+  radius?: number
+}
+
+// ─── スプライト定義 ─────────────────────────────────
+
 export interface SpriteDef {
   id: string
   name: string
-  emoji: string
+  emoji?: string
+  costumes: Costume[]
+  currentCostumeIndex: number
+  collider: ColliderDef
   x: number
   y: number
   size: number
@@ -79,14 +74,67 @@ export interface SpriteDef {
   visible: boolean
 }
 
+export function resolveSpriteEmoji(
+  sprite?: Pick<SpriteDef, "emoji">,
+  index: number = 0,
+): string {
+  return sprite?.emoji ?? DEFAULT_SPRITE_EMOJIS[index % DEFAULT_SPRITE_EMOJIS.length]
+}
+
+function createCostumeCanvas() {
+  if (typeof document === "undefined") return null
+  const canvas = document.createElement("canvas")
+  canvas.width = DEFAULT_COSTUME_SIZE
+  canvas.height = DEFAULT_COSTUME_SIZE
+  return canvas
+}
+
+function renderEmojiCostumeDataUrl(emoji: string): string {
+  const canvas = createCostumeCanvas()
+  if (!canvas) return ""
+
+  const ctx = canvas.getContext("2d")
+  if (!ctx) return ""
+
+  ctx.clearRect(0, 0, canvas.width, canvas.height)
+  ctx.font = `${Math.round(DEFAULT_COSTUME_SIZE * 0.78)}px "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif`
+  ctx.textAlign = "center"
+  ctx.textBaseline = "middle"
+  ctx.fillText(emoji, canvas.width / 2, canvas.height / 2 + 2)
+  return canvas.toDataURL("image/png")
+}
+
+export function createEmojiCostume(name: string, emoji: string): Costume {
+  return {
+    id: `costume-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+    name,
+    dataUrl: renderEmojiCostumeDataUrl(emoji),
+    width: DEFAULT_COSTUME_SIZE,
+    height: DEFAULT_COSTUME_SIZE,
+  }
+}
+
+export function createDefaultCostume(name: string, emoji: string): Costume {
+  return createEmojiCostume(name, emoji)
+}
+
+export const DEFAULT_COLLIDER: ColliderDef = {
+  type: "bbox",
+}
+
+const defaultSpriteEmoji = resolveSpriteEmoji(undefined, 0)
+
 export const DEFAULT_SPRITES: SpriteDef[] = [
   {
     id: "sprite-1",
     name: "ネコ",
-    emoji: "🐱",
+    emoji: defaultSpriteEmoji,
+    costumes: [createDefaultCostume("コスチューム1", defaultSpriteEmoji)],
+    currentCostumeIndex: 0,
+    collider: { ...DEFAULT_COLLIDER },
     x: 0,
     y: 0,
-    size: 100,
+    size: 300,
     direction: 90,
     visible: true,
   },

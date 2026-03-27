@@ -4,6 +4,8 @@ import { useState, useCallback } from "react"
 import {
   BLOCK_CATEGORIES,
   DEFAULT_SPRITES,
+  createDefaultCostume,
+  resolveSpriteEmoji,
   type BlockCategoryId,
   type SpriteDef,
 } from "@/features/editor/constants"
@@ -22,12 +24,15 @@ export function useEditorState() {
   const selectedSprite = sprites.find((s) => s.id === selectedSpriteId)
 
   const addSprite = useCallback(() => {
-    const emojis = ["🐶", "🐰", "🦊", "🐸", "🐧", "🦁", "🐻", "🐼"]
     const id = `sprite-${Date.now()}`
+    const emoji = resolveSpriteEmoji(undefined, sprites.length)
     const newSprite: SpriteDef = {
       id,
       name: `スプライト${sprites.length + 1}`,
-      emoji: emojis[sprites.length % emojis.length],
+      emoji,
+      costumes: [createDefaultCostume("コスチューム1", emoji)],
+      currentCostumeIndex: 0,
+      collider: { type: "bbox" },
       x: Math.random() * 200 - 100,
       y: Math.random() * 200 - 100,
       size: 100,

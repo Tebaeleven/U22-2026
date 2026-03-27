@@ -182,6 +182,32 @@
   gap: 6px;
 }
 
+.scratch-header-copy-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 24px;
+  padding: 0 10px;
+  border: 1px solid rgba(0, 0, 0, 0.15);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.22);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+  cursor: grab;
+  pointer-events: auto;
+  white-space: nowrap;
+  user-select: none;
+  appearance: none;
+  box-shadow: none;
+  outline: none;
+}
+
+.scratch-header-copy-chip:active {
+  cursor: grabbing;
+}
+
 /* 形状: stack — 標準 */
 .scratch-stack {
   padding: 0 12px;
@@ -276,6 +302,20 @@
 
 .scratch-slot-boolean {
   min-width: 36px;
+}
+
+.scratch-variable-token {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 100%;
+  height: 24px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.25);
+  color: #fff;
+  font-size: 12px;
+  line-height: 1;
 }
 
 /* Boolean slot (空き六角枠) */

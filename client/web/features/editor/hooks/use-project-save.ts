@@ -9,6 +9,7 @@ import {
   uploadThumbnail,
   type ProjectData,
 } from "@/lib/supabase/project-storage"
+import type { BlockProjectData } from "@/features/editor/block-editor/types"
 import type { SpriteDef } from "@/features/editor/constants"
 
 interface UseProjectSaveOptions {
@@ -16,6 +17,8 @@ interface UseProjectSaveOptions {
   setProjectName: (name: string) => void
   sprites: SpriteDef[]
   setSprites: (sprites: SpriteDef[]) => void
+  getBlockProjectData: () => Record<string, BlockProjectData>
+  onLoadBlockProjectData: (data: Record<string, BlockProjectData>) => void
 }
 
 export function useProjectSave({
@@ -23,6 +26,8 @@ export function useProjectSave({
   setProjectName,
   sprites,
   setSprites,
+  getBlockProjectData,
+  onLoadBlockProjectData,
 }: UseProjectSaveOptions) {
   const router = useRouter()
   const supabase = createClient()
@@ -79,13 +84,13 @@ export function useProjectSave({
       const projectData: ProjectData = {
         version: 1,
         sprites,
-        blocks: {},
+        blocks: getBlockProjectData(),
       }
       await saveProjectData(supabase, user.id, String(currentId), projectData)
     } finally {
       setIsSaving(false)
     }
-  }, [ensureAuth, projectId, projectName, sprites, supabase])
+  }, [ensureAuth, getBlockProjectData, projectId, projectName, sprites, supabase])
 
   /** プロジェクトを共有（保存 + shared=true） */
   const shareProject = useCallback(async () => {
@@ -121,10 +126,13 @@ export function useProjectSave({
       if (projectData?.sprites && projectData.sprites.length > 0) {
         setSprites(projectData.sprites)
       }
+      if (projectData?.blocks) {
+        onLoadBlockProjectData(projectData.blocks)
+      }
     } finally {
       setIsLoading(false)
     }
-  }, [supabase, setProjectName, setSprites])
+  }, [onLoadBlockProjectData, setProjectName, setSprites, supabase])
 
   /** サムネイルを設定 */
   const saveThumbnail = useCallback(async (blob: Blob) => {

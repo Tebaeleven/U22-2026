@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js"
 import type { SpriteDef } from "@/features/editor/constants"
+import type { BlockProjectData } from "@/features/editor/block-editor/types"
 
 const BUCKET = "project-files"
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!
@@ -15,7 +16,8 @@ export function getStorageUrl(path: string, bucket: string = BUCKET): string {
 export interface ProjectData {
   version: number
   sprites: SpriteDef[]
-  blocks: Record<string, unknown>
+  /** スプライトごとのブロックデータ（spriteId → BlockProjectData） */
+  blocks: Record<string, BlockProjectData>
 }
 
 /** project.json のデフォルト値 */
@@ -70,7 +72,18 @@ export async function loadProjectData(
   if (error) return null
 
   const text = await data.text()
-  return JSON.parse(text) as ProjectData
+  const parsed = JSON.parse(text) as Partial<ProjectData>
+
+  return {
+    version: parsed.version ?? 1,
+    sprites: parsed.sprites ?? [],
+    blocks:
+      parsed.blocks &&
+      typeof parsed.blocks === "object" &&
+      !Array.isArray(parsed.blocks)
+        ? (parsed.blocks as Record<string, BlockProjectData>)
+        : {},
+  }
 }
 
 /** サムネイル画像をアップロードし、公開URLを返す */

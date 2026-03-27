@@ -1,0 +1,75 @@
+import type { BlockArgs, BlockUtil } from "../types"
+
+/** ◯ + ◯ */
+export function operator_add(args: BlockArgs, _util: BlockUtil): number {
+  return (Number(args.NUM1) || 0) + (Number(args.NUM2) || 0)
+}
+
+/** ◯ - ◯ */
+export function operator_subtract(args: BlockArgs, _util: BlockUtil): number {
+  return (Number(args.NUM1) || 0) - (Number(args.NUM2) || 0)
+}
+
+/** ◯ * ◯ */
+export function operator_multiply(args: BlockArgs, _util: BlockUtil): number {
+  return (Number(args.NUM1) || 0) * (Number(args.NUM2) || 0)
+}
+
+/** ◯ / ◯ */
+export function operator_divide(args: BlockArgs, _util: BlockUtil): number {
+  const num2 = Number(args.NUM2) || 0
+  if (num2 === 0) return 0
+  return (Number(args.NUM1) || 0) / num2
+}
+
+/** _から_までの乱数 */
+export function operator_random(args: BlockArgs, _util: BlockUtil): number {
+  const from = Number(args.FROM) || 1
+  const to = Number(args.TO) || 10
+  const low = Math.min(from, to)
+  const high = Math.max(from, to)
+  if (Number.isInteger(low) && Number.isInteger(high)) {
+    return Math.floor(Math.random() * (high - low + 1)) + low
+  }
+  return Math.random() * (high - low) + low
+}
+
+/** ◯ > ◯ */
+export function operator_gt(args: BlockArgs, _util: BlockUtil): boolean {
+  return (Number(args.OPERAND1) || 0) > (Number(args.OPERAND2) || 0)
+}
+
+/** ◯ < ◯ */
+export function operator_lt(args: BlockArgs, _util: BlockUtil): boolean {
+  return (Number(args.OPERAND1) || 0) < (Number(args.OPERAND2) || 0)
+}
+
+/** ◯ = ◯ */
+export function operator_equals(args: BlockArgs, _util: BlockUtil): boolean {
+  return String(args.OPERAND1) === String(args.OPERAND2)
+}
+
+/** _ かつ _ */
+export function operator_and(args: BlockArgs, _util: BlockUtil): boolean {
+  return Boolean(args.OPERAND1) && Boolean(args.OPERAND2)
+}
+
+/** _ または _ */
+export function operator_or(args: BlockArgs, _util: BlockUtil): boolean {
+  return Boolean(args.OPERAND1) || Boolean(args.OPERAND2)
+}
+
+/** _ではない */
+export function operator_not(args: BlockArgs, _util: BlockUtil): boolean {
+  return !Boolean(args.OPERAND)
+}
+
+/** _と_を結合 */
+export function operator_join(args: BlockArgs, _util: BlockUtil): string {
+  return String(args.STRING1 ?? "") + String(args.STRING2 ?? "")
+}
+
+/** _の長さ */
+export function operator_length(args: BlockArgs, _util: BlockUtil): number {
+  return String(args.STRING ?? "").length
+}

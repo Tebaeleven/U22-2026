@@ -1,9 +1,4 @@
-import type { Container } from "headless-vpl"
-import type {
-  NestingZone,
-  SnapConnection,
-  Workspace,
-} from "headless-vpl"
+import type { Container, NestingZone, SnapConnection, Workspace } from "headless-vpl"
 import { connectStackPairs } from "headless-vpl/blocks"
 import type {
   BlockRegistry,
@@ -13,12 +8,9 @@ import type {
   SampleScene,
   SlotZoneMeta,
 } from "./types"
-import { BLOCK_DEFS } from "./blocks"
+import { findBuiltinBlockDefId, getBlockDefById } from "./blocks"
 import { createBlock } from "./factory"
-import {
-  alignCBlockBodyEntryConnectors,
-  syncBodyLayoutChain,
-} from "./layout"
+import { alignCBlockBodyEntryConnectors, syncBodyLayoutChain } from "./layout"
 
 export function resetEditorWorkspace(
   ws: Workspace,
@@ -53,67 +45,36 @@ export function buildSampleScene(
   containers: Container[]
 ): SampleScene {
   const created: CreatedBlock[] = []
-  const make = (defIndex: number, x: number, y: number): CreatedBlock => {
-    const block = createBlock(ws, BLOCK_DEFS[defIndex], x, y)
+  const definitions: Record<string, CreatedBlock> = {}
+
+  const make = (defId: string, x: number, y: number, key: string): CreatedBlock => {
+    const def = getBlockDefById(defId, [])
+    if (!def) {
+      throw new Error(`BlockDef not found: ${defId}`)
+    }
+    const block = createBlock(ws, def, x, y)
     created.push(block)
     containers.push(block.container)
+    definitions[key] = block
     return block
   }
 
-  const flag = make(0, 60, 30)
-  const move1 = make(2, 60, 92)
-  const turn1 = make(3, 60, 134)
-  const say1 = make(6, 60, 176)
-  const repeat1 = make(12, 60, 228)
+  make(findBuiltinBlockDefId("When 🏴 clicked"), 60, 30, "flag")
+  make(findBuiltinBlockDefId("Move"), 60, 92, "move1")
+  make(findBuiltinBlockDefId("Turn ↻"), 60, 134, "turn1")
+  make(findBuiltinBlockDefId("Say"), 60, 176, "say1")
+  make(findBuiltinBlockDefId("Repeat", "c-block"), 60, 228, "repeat1")
 
-  const moveInRepeat = make(2, 76, 268)
-  const turnInRepeat = make(3, 76, 310)
+  make(findBuiltinBlockDefId("Move"), 76, 268, "moveInRepeat")
+  make(findBuiltinBlockDefId("Turn ↻"), 76, 310, "turnInRepeat")
 
-  const keyPress = make(1, 340, 30)
-  const if1 = make(14, 340, 92)
-  make(16, 340, 222)
-
-  make(13, 580, 30)
-  make(11, 580, 160)
-  make(7, 580, 210)
-  make(15, 580, 270)
-  make(9, 580, 470)
-  make(10, 580, 520)
-  make(5, 580, 570)
-  make(4, 580, 620)
-  make(8, 580, 670)
-  make(17, 580, 720)
-
-  make(18, 580, 780)
-  make(19, 580, 820)
-  make(21, 580, 860)
-  make(20, 580, 900)
-  make(22, 580, 940)
-  make(23, 860, 30)
-  make(24, 860, 92)
-  make(25, 860, 144)
-  make(26, 860, 204)
-  make(27, 860, 274)
-  make(28, 860, 334)
-  make(29, 860, 394)
-  make(30, 860, 454)
-  make(31, 860, 514)
-  make(32, 860, 584)
-  make(33, 860, 654)
-  make(34, 860, 714)
-  make(35, 860, 774)
+  make(findBuiltinBlockDefId("When", "hat"), 340, 30, "keyPress")
+  make(findBuiltinBlockDefId("If", "c-block-else"), 340, 92, "if1")
+  make(findBuiltinBlockDefId("Set", "stack"), 340, 222, "set1")
 
   return {
     created,
-    flag,
-    move1,
-    turn1,
-    say1,
-    repeat1,
-    moveInRepeat,
-    turnInRepeat,
-    keyPress,
-    if1,
+    definitions,
   }
 }
 

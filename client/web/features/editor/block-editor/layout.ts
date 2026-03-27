@@ -17,8 +17,11 @@ import {
   INLINE_GAP,
   INLINE_HEIGHT_PADDING,
   INLINE_PADDING_X,
+  getHeaderReporterCopies,
+  getHeaderReporterCopyLabel,
   getBlockSize,
   getInputValue,
+  hatReporterChipWidth,
   inputWidth,
   estimateTextWidth,
   isCBlockShape,
@@ -181,10 +184,20 @@ export function relayoutSlotsAndFitBlock(block: CreatedBlock): void {
     cursor += usedWidth + INLINE_GAP
   }
 
+  const headerReporterCopies = getHeaderReporterCopies(def)
+  for (const copy of headerReporterCopies) {
+    cursor +=
+      hatReporterChipWidth(getHeaderReporterCopyLabel(copy, block.state)) +
+      INLINE_GAP
+  }
+
+  const hasInlineTokens =
+    def.inputs.length > 0 || headerReporterCopies.length > 0
+
   const requiredWidth = Math.max(
     baseSize.w,
     Math.ceil(
-      cursor + INLINE_PADDING_X - (def.inputs.length > 0 ? INLINE_GAP : 0)
+      cursor + INLINE_PADDING_X - (hasInlineTokens ? INLINE_GAP : 0)
     )
   )
   const requiredHeight = Math.max(baseSize.h, headerHeight)

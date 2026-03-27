@@ -12,16 +12,103 @@ export type BlockShape =
 
 export type ValueBlockShape = "reporter" | "boolean"
 
+export type ProcedureParamType = "text" | "number"
+
+export type CustomProcedureParam = {
+  id: string
+  name: string
+  valueType: ProcedureParamType
+}
+
+export type CustomProcedureToken =
+  | {
+      id: string
+      type: "label"
+      text: string
+    }
+  | {
+      id: string
+      type: "param"
+      paramId: string
+    }
+
+export type CustomProcedure = {
+  id: string
+  name: string
+  tokens: CustomProcedureToken[]
+  params: CustomProcedureParam[]
+  returnsValue: boolean
+}
+
+export type BuiltinBlockSource = {
+  kind: "builtin"
+}
+
+export type StarterDefineBlockSource = {
+  kind: "starter-define"
+}
+
+export type CustomDefineBlockSource = {
+  kind: "custom-define"
+  procedureId: string
+}
+
+export type CustomCallBlockSource = {
+  kind: "custom-call"
+  procedureId: string
+}
+
+export type CustomArgumentBlockSource = {
+  kind: "custom-argument"
+  procedureId: string
+  paramId: string
+}
+
+export type CustomReturnBlockSource = {
+  kind: "custom-return"
+}
+
+export type BlockSource =
+  | BuiltinBlockSource
+  | StarterDefineBlockSource
+  | CustomDefineBlockSource
+  | CustomCallBlockSource
+  | CustomArgumentBlockSource
+  | CustomReturnBlockSource
+
+export type HeaderReporterCopy = {
+  label?: string
+  labelInputIndex?: number
+  blockName?: string
+  targetOpcode?: string
+  targetShape?: ValueBlockShape
+  inputBindings?: Record<number, number>
+}
+
 export type InputDef =
   | {
       type: "number"
       default: number
+      placeholder?: string
+      paramId?: string
       minWidth?: number
       maxWidth?: number
     }
   | {
       type: "text"
       default: string
+      placeholder?: string
+      paramId?: string
+      minWidth?: number
+      maxWidth?: number
+    }
+  | {
+      type: "variable-name"
+      default: string
+      placeholder?: string
+      editable?: boolean
+      appearance?: "inline-reporter"
+      copySource?: HeaderReporterCopy
       minWidth?: number
       maxWidth?: number
     }
@@ -33,17 +120,42 @@ export type InputDef =
       maxWidth?: number
     }
   | {
+      type: "param-chip"
+      paramId: string
+      label: string
+      valueType: ProcedureParamType
+    }
+  | {
       type: "boolean-slot"
       minWidth?: number
       maxWidth?: number
     }
   | { type: "label"; text: string }
 
+export type BlockCategory =
+  | "motion"
+  | "looks"
+  | "sound"
+  | "events"
+  | "control"
+  | "sensing"
+  | "operators"
+  | "variables"
+  | "lists"
+  | "myblocks"
+  | "physics"
+
 export type BlockDef = {
+  id: string
   name: string
+  opcode?: string
   shape: BlockShape
   color: string
   inputs: InputDef[]
+  category: BlockCategory
+  source: BlockSource
+  headerReporterCopies?: HeaderReporterCopy[]
+  paletteHidden?: boolean
 }
 
 export type BlockState = {
@@ -90,6 +202,28 @@ export type BlockRegistry = {
   containerMap: Map<string, Container>
 }
 
+export type SerializedBlockNode = {
+  instanceId: string
+  defId: string
+  inputValues: Record<string, string>
+  position: {
+    x: number
+    y: number
+  }
+  nextId: string | null
+  bodyChildren: string[][]
+  slotChildren: Record<string, string>
+}
+
+export type BlockWorkspaceData = {
+  blocks: SerializedBlockNode[]
+}
+
+export type BlockProjectData = {
+  customProcedures: CustomProcedure[]
+  workspace: BlockWorkspaceData
+}
+
 export type SlotZoneMeta = {
   blockId: string
   inputIndex: number
@@ -107,15 +241,7 @@ export type BodyLayoutHit = {
 
 export type SampleScene = {
   created: CreatedBlock[]
-  flag: CreatedBlock
-  move1: CreatedBlock
-  turn1: CreatedBlock
-  say1: CreatedBlock
-  repeat1: CreatedBlock
-  moveInRepeat: CreatedBlock
-  turnInRepeat: CreatedBlock
-  keyPress: CreatedBlock
-  if1: CreatedBlock
+  definitions: Record<string, CreatedBlock>
 }
 
 export type ShapeConfig = {
