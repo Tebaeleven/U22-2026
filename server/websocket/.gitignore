@@ -1,0 +1,16 @@
+# 依存関係
+node_modules/
+
+# ビルド出力
+dist/
+
+# 環境変数
+.env
+.env.*
+!.env.example
+
+# OS
+.DS_Store
+
+# TypeScript
+*.tsbuildinfo

@@ -32,6 +32,10 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+!.env.example
+
+# 重複の生成画像（アプリは public/images/ = URL /images/ のみ参照。この直下は約100MB超のため追跡しない）
+/images/
 
 # vercel
 .vercel

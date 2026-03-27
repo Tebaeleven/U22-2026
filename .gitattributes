@@ -1,0 +1,2 @@
+# サンプル用 PNG（約100MB超）。clone 後は git lfs pull が必要な場合あり。
+client/web/public/images/** filter=lfs diff=lfs merge=lfs -text

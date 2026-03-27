@@ -1,0 +1,17 @@
+{
+  "name": "websocket-server",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "tsx --watch src/index.ts",
+    "start": "tsx src/index.ts"
+  },
+  "dependencies": {
+    "colyseus": "^0.17.8"
+  },
+  "devDependencies": {
+    "@types/node": "^20",
+    "tsx": "^4.21.0",
+    "typescript": "^5"
+  }
+}

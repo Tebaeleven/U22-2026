@@ -1,0 +1,30 @@
+# ランタイム
+.pid/
+.logs/
+
+# 依存関係
+node_modules/
+
+# ビルド出力
+dist/
+
+# 環境変数
+.env
+.env.*
+!.env.example
+!**/.env.example
+
+# OS
+.DS_Store
+Thumbs.db
+
+# エディタ・IDE（個人設定の誤コミット防止）
+.cursor/
+.idea/
+.vscode/
+
+# エディタ・ツール
+.claude/
+*.swp
+*.swo
+*~
