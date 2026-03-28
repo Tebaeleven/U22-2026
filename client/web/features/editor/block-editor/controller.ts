@@ -26,15 +26,10 @@ import type {
   CreatedBlock,
   CustomProcedure,
   SlotZoneMeta,
-  SerializedBlockNode,
 } from "./types"
 import {
   buildProcedureBlockDefs,
-  createDefaultProcedure,
-  createDefaultProcedureParam,
   getBlockDefById,
-  getInputIndexBySerializationKey,
-  getInputSerializationKey,
   normalizeProcedure,
   SPRITE_DROPDOWN_OPCODES,
   STARTER_DEFINE_BLOCK_ID,
@@ -58,7 +53,11 @@ import {
   seedInitialCBlockNest,
 } from "./sample-scene"
 import { createBlock } from "./factory"
+import { rebuildBlocks, exportWorkspaceBlocks } from "./persistence-manager"
+import { ProcedureManager } from "./procedure-manager"
+import { VariableManager } from "./variable-manager"
 
+/** コントローラーの現在状態。React の useSyncExternalStore で購読する */
 export type BlockEditorSnapshot = {
   blocks: BlockState[]
   nestedSlots: Record<string, string>
@@ -73,10 +72,15 @@ const EMPTY_SNAPSHOT: BlockEditorSnapshot = {
   customVariables: [],
 }
 
+/** ブロック複製時の位置オフセット（px） */
+const DUPLICATE_OFFSET = 48
+
+/** オブジェクトのディープコピーを作成する（JSON経由） */
 function cloneProcedure<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T
 }
 
+/** ブロックエディタの中央コントローラー。ブロックの追加・削除・接続・レイアウトを一元管理する */
 export class BlockEditorController {
   private readonly listeners = new Set<() => void>()
   private snapshot: BlockEditorSnapshot = EMPTY_SNAPSHOT
@@ -95,10 +99,35 @@ export class BlockEditorController {
   private readonly bodyZoneMap = new Map<NestingZone, BodyZoneMeta>()
   private readonly activeBodyProximityIds = new Set<string>()
 
+  private readonly procedureManager = new ProcedureManager({
+    getSnapshot: () => this.snapshot,
+    applyProcedureChange: (updater) => {
+      const data = this.exportProjectData()
+      this.rebuildFromProjectData(updater(data), false)
+    },
+    setCustomProcedures: (procedures) => this.setCustomProcedures(procedures),
+    addBlock: (defId, x, y) => this.addBlock(defId, x, y),
+    insertBlockByDef: (defId, procedures, x, y) => {
+      if (!this.workspace) return null
+      const def = getBlockDefById(defId, procedures)
+      if (!def) return null
+      return this.insertBlock(def, x, y)
+    },
+  })
+
+  private readonly variableManager = new VariableManager({
+    getCustomVariables: () => this.snapshot.customVariables,
+    setCustomVariables: (variables) => {
+      this.snapshot = { ...this.snapshot, customVariables: variables }
+      this.emit()
+    },
+  })
+
   readonly snapConnections: SnapConnection[] = []
   readonly nestingZones: NestingZone[] = []
   readonly cBlockRefs: CBlockRef[] = []
 
+  /** ネスト変更（ブロックのはめ込み・取り出し）時のハンドラ */
   private handleNestChange(
     container: Container,
     zone: NestingZone,
@@ -131,6 +160,7 @@ export class BlockEditorController {
     }
   }
 
+  /** headless-vpl のインタラクション設定オーバーライド */
   readonly interactionOverrides: Partial<InteractionConfig> = {
     snapConnections: this.snapConnections,
     nestingZones: this.nestingZones,
@@ -141,6 +171,7 @@ export class BlockEditorController {
     },
   }
 
+  /** 状態変更リスナーを登録する。useSyncExternalStore の第1引数 */
   readonly subscribe = (listener: () => void) => {
     this.listeners.add(listener)
     return () => {
@@ -148,26 +179,32 @@ export class BlockEditorController {
     }
   }
 
+  /** 現在のスナップショットを返す。useSyncExternalStore の第2引数 */
   readonly getSnapshot = () => this.snapshot
 
+  /** ブロックIDからコンテナを取得する */
   getContainer(blockId: string): Container | undefined {
     return this.createdMap.get(blockId)?.container
   }
 
+  /** ブロックIDから生成済みブロック情報を取得する */
   getCreatedBlock(blockId: string): CreatedBlock | undefined {
     return this.createdMap.get(blockId)
   }
 
+  /** ブロックIDからCブロック参照を取得する */
   getCBlockRef(blockId: string): CBlockRef | undefined {
     return this.cBlockRefMap.get(blockId)
   }
 
+  /** 手続きIDからカスタム手続き定義を取得する */
   getCustomProcedure(procedureId: string): CustomProcedure | undefined {
     return this.snapshot.customProcedures.find(
       (procedure) => procedure.id === procedureId
     )
   }
 
+  /** ブロックの入力値を更新し、レイアウトを再計算する */
   updateInputValue(
     blockId: string,
     inputIndex: number,
@@ -183,24 +220,26 @@ export class BlockEditorController {
 
   /** スプライト名変更時に、全ブロックの該当ドロップダウン値を旧名→新名に置換する */
   renameSpriteInBlocks(oldName: string, newName: string): void {
-    let changed = false
-    for (const created of this.createdMap.values()) {
+    console.log("[renameSpriteInBlocks]", { oldName, newName, mapSize: this.createdMap.size })
+    for (const [blockId, created] of this.createdMap.entries()) {
       const opcode = created.state.def.opcode
       if (!opcode) continue
       const config = SPRITE_DROPDOWN_OPCODES[opcode]
-      if (!config) continue
+      if (!config) {
+        continue
+      }
       const idx = config.inputIndex
       const inputDef = created.state.def.inputs[idx]
       const defaultVal = inputDef && "default" in inputDef ? inputDef.default : undefined
       const current = created.state.inputValues[idx] ?? defaultVal
+      console.log("[renameSpriteInBlocks] block:", { blockId, opcode, idx, current, oldName, match: current === oldName })
       if (current === oldName) {
-        created.state.inputValues[idx] = newName
-        changed = true
+        this.updateInputValue(blockId, idx, newName)
       }
     }
-    if (changed) this.bumpRevision()
   }
 
+  /** 定義IDからブロックを生成してワークスペースに追加する */
   addBlock(defId: string, x: number, y: number): string | null {
     if (defId === STARTER_DEFINE_BLOCK_ID) {
       return this.createProcedureBlock(x, y)
@@ -211,6 +250,7 @@ export class BlockEditorController {
     return this.insertBlock(def, x, y)
   }
 
+  /** ブロックを削除する。ディファインブロックの場合は手続き全体を削除 */
   deleteBlock(blockId: string): void {
     const created = this.createdMap.get(blockId)
     if (!created) return
@@ -223,29 +263,30 @@ export class BlockEditorController {
     this.deleteBlockInstance(blockId)
   }
 
+  /** ブロックを複製する。ディファインブロックの場合は手続きごと複製 */
   duplicateBlock(blockId: string): string | null {
     const original = this.createdMap.get(blockId)
     if (!original) return null
 
-    const OFFSET = 48
     if (original.state.def.source.kind === "custom-define") {
       const procedure = this.getCustomProcedure(
         original.state.def.source.procedureId
       )
       if (!procedure) return null
-      const cloned = this.cloneProcedureDefinition(procedure)
+      const cloned = this.procedureManager.cloneDefinition(procedure)
       const nextProcedures = [...this.snapshot.customProcedures, cloned]
       this.setCustomProcedures(nextProcedures)
       return this.addBlock(
         `${buildProcedureBlockDefs(cloned)[0].id}`,
-        original.container.position.x + OFFSET,
-        original.container.position.y + OFFSET
+        original.container.position.x + DUPLICATE_OFFSET,
+        original.container.position.y + DUPLICATE_OFFSET
       )
     }
 
-    return this.addDuplicatedBlock(original, OFFSET)
+    return this.addDuplicatedBlock(original, DUPLICATE_OFFSET)
   }
 
+  /** ワークスペースにマウントしてシーンを構築する。アンマウント関数を返す */
   mount(workspace: Workspace, containers: Container[]): () => void {
     if (this.workspace === workspace) {
       return () => this.unmount(workspace)
@@ -259,6 +300,7 @@ export class BlockEditorController {
     return () => this.unmount(workspace)
   }
 
+  /** ワークスペースをリセットしてシーンを再構築する */
   reset(): void {
     if (!this.workspace) return
     const workspace = this.workspace
@@ -269,6 +311,7 @@ export class BlockEditorController {
     this.rebuildScene(workspace, containers)
   }
 
+  /** プロジェクトデータを読み込む。未マウント時は保留して後でリストアする */
   loadProjectData(projectData: BlockProjectData): void {
     const normalized: BlockProjectData = {
       customProcedures: (projectData.customProcedures ?? []).map(normalizeProcedure),
@@ -292,6 +335,7 @@ export class BlockEditorController {
     this.rebuildFromProjectData(normalized, false)
   }
 
+  /** 現在のワークスペース状態をプロジェクトデータとしてエクスポートする */
   exportProjectData(): BlockProjectData {
     return {
       customProcedures: this.snapshot.customProcedures.map(cloneProcedure),
@@ -300,176 +344,56 @@ export class BlockEditorController {
     }
   }
 
+  /** 手続き定義を更新する（export→rebuild の重いパスを通る） */
   updateProcedure(
     procedureId: string,
     updater: (procedure: CustomProcedure) => CustomProcedure
-  ): void {
-    const data = this.exportProjectData()
-    const procedures = data.customProcedures.map((procedure) =>
-      procedure.id === procedureId
-        ? normalizeProcedure(updater(cloneProcedure(procedure)))
-        : procedure
-    )
-    this.rebuildFromProjectData(
-      {
-        ...data,
-        customProcedures: procedures,
-      },
-      false
-    )
+  ): void { this.procedureManager.update(procedureId, updater) }
+
+  /** 手続きにラベルトークンを追加する */
+  createProcedureLabel(procedureId: string): void { this.procedureManager.createLabel(procedureId) }
+
+  /** 手続きにパラメータトークンを追加する */
+  createProcedureParam(procedureId: string, valueType: "text" | "number"): void {
+    this.procedureManager.createParam(procedureId, valueType)
   }
 
-  createProcedureLabel(procedureId: string): void {
-    this.updateProcedure(procedureId, (procedure) => ({
-      ...procedure,
-      tokens: [
-        ...procedure.tokens,
-        { id: `token-${Date.now()}`, type: "label", text: "label" },
-      ],
-    }))
-  }
-
-  createProcedureParam(
-    procedureId: string,
-    valueType: "text" | "number"
-  ): void {
-    this.updateProcedure(procedureId, (procedure) => {
-      const param = createDefaultProcedureParam(valueType)
-      return {
-        ...procedure,
-        params: [...procedure.params, param],
-        tokens: [
-          ...procedure.tokens,
-          { id: `token-${Date.now()}`, type: "param", paramId: param.id },
-        ],
-      }
-    })
-  }
-
+  /** 手続きトークンを前後に移動する */
   moveProcedureToken(procedureId: string, tokenId: string, direction: -1 | 1): void {
-    this.updateProcedure(procedureId, (procedure) => {
-      const index = procedure.tokens.findIndex((token) => token.id === tokenId)
-      if (index === -1) return procedure
-      const nextIndex = index + direction
-      if (nextIndex < 0 || nextIndex >= procedure.tokens.length) return procedure
-      const tokens = procedure.tokens.slice()
-      const [token] = tokens.splice(index, 1)
-      tokens.splice(nextIndex, 0, token)
-      return {
-        ...procedure,
-        tokens,
-      }
-    })
+    this.procedureManager.moveToken(procedureId, tokenId, direction)
   }
 
+  /** 手続きからトークンを削除する。パラメータトークンの場合はパラメータも削除 */
   removeProcedureToken(procedureId: string, tokenId: string): void {
-    this.updateProcedure(procedureId, (procedure) => {
-      const token = procedure.tokens.find((item) => item.id === tokenId)
-      if (!token) return procedure
-      const tokens = procedure.tokens.filter((item) => item.id !== tokenId)
-      if (token.type === "param") {
-        return {
-          ...procedure,
-          tokens,
-          params: procedure.params.filter((param) => param.id !== token.paramId),
-        }
-      }
-      return {
-        ...procedure,
-        tokens,
-      }
-    })
+    this.procedureManager.removeToken(procedureId, tokenId)
   }
 
-  setProcedureLabelText(
-    procedureId: string,
-    tokenId: string,
-    text: string
-  ): void {
-    this.updateProcedure(procedureId, (procedure) => ({
-      ...procedure,
-      tokens: procedure.tokens.map((token) =>
-        token.id === tokenId && token.type === "label"
-          ? { ...token, text }
-          : token
-      ),
-    }))
+  /** 手続きのラベルトークンのテキストを設定する */
+  setProcedureLabelText(procedureId: string, tokenId: string, text: string): void {
+    this.procedureManager.setLabelText(procedureId, tokenId, text)
   }
 
-  setProcedureParamName(
-    procedureId: string,
-    paramId: string,
-    name: string
-  ): void {
-    this.updateProcedure(procedureId, (procedure) => ({
-      ...procedure,
-      params: procedure.params.map((param) =>
-        param.id === paramId ? { ...param, name } : param
-      ),
-    }))
+  /** 手続きパラメータの名前を設定する */
+  setProcedureParamName(procedureId: string, paramId: string, name: string): void {
+    this.procedureManager.setParamName(procedureId, paramId, name)
   }
 
+  /** 手続きトークンの順序を変更する */
   reorderProcedureToken(procedureId: string, fromIndex: number, toIndex: number): void {
-    this.updateProcedure(procedureId, (procedure) => {
-      if (fromIndex < 0 || fromIndex >= procedure.tokens.length) return procedure
-      if (toIndex < 0 || toIndex >= procedure.tokens.length) return procedure
-      const tokens = procedure.tokens.slice()
-      const [token] = tokens.splice(fromIndex, 1)
-      tokens.splice(toIndex, 0, token)
-      return { ...procedure, tokens }
-    })
+    this.procedureManager.reorderToken(procedureId, fromIndex, toIndex)
   }
 
-  changeProcedureTokenType(
-    procedureId: string,
-    tokenId: string,
-    newType: "label" | "text" | "number"
-  ): void {
-    this.updateProcedure(procedureId, (procedure) => {
-      const tokenIndex = procedure.tokens.findIndex((t) => t.id === tokenId)
-      if (tokenIndex === -1) return procedure
-      const token = procedure.tokens[tokenIndex]
-
-      const currentType = token.type === "label"
-        ? "label"
-        : (procedure.params.find((p) => p.id === token.paramId)?.valueType ?? "text")
-      if (currentType === newType) return procedure
-
-      // 古い param があれば削除
-      let params = [...procedure.params]
-      if (token.type === "param") {
-        params = params.filter((p) => p.id !== token.paramId)
-      }
-
-      let newToken: typeof token
-      if (newType === "label") {
-        const oldText = token.type === "label"
-          ? token.text
-          : (procedure.params.find((p) => p.id === token.paramId)?.name ?? "label")
-        newToken = { id: token.id, type: "label", text: oldText }
-      } else {
-        const param = createDefaultProcedureParam(newType)
-        const oldName = token.type === "label"
-          ? token.text
-          : (procedure.params.find((p) => p.id === token.paramId)?.name ?? param.name)
-        param.name = oldName
-        params = [...params, param]
-        newToken = { id: token.id, type: "param", paramId: param.id }
-      }
-
-      const tokens = procedure.tokens.slice()
-      tokens[tokenIndex] = newToken
-      return { ...procedure, tokens, params }
-    })
+  /** 手続きトークンの型を変更する（ラベル↔パラメータ） */
+  changeProcedureTokenType(procedureId: string, tokenId: string, newType: "label" | "text" | "number"): void {
+    this.procedureManager.changeTokenType(procedureId, tokenId, newType)
   }
 
+  /** 手続きの戻り値有無を設定する */
   setProcedureReturnsValue(procedureId: string, returnsValue: boolean): void {
-    this.updateProcedure(procedureId, (procedure) => ({
-      ...procedure,
-      returnsValue,
-    }))
+    this.procedureManager.setReturnsValue(procedureId, returnsValue)
   }
 
+  /** ブロックを複製して入力値をコピーする */
   private addDuplicatedBlock(original: CreatedBlock, offset: number): string | null {
     const newId = this.addBlock(
       original.state.def.id,
@@ -490,86 +414,20 @@ export class BlockEditorController {
 
   /** 指定した procedure 定義からブロックを作成してワークスペースに追加 */
   createProcedureFromSpec(procedure: CustomProcedure, x: number, y: number): string | null {
-    const normalized = normalizeProcedure(procedure)
-    const nextProcedures = [...this.snapshot.customProcedures, normalized]
-    this.setCustomProcedures(nextProcedures)
-    const defId = buildProcedureBlockDefs(normalized)[0].id
-    if (!this.workspace) return null
-    const def = getBlockDefById(defId, nextProcedures)
-    if (!def) return null
-    return this.insertBlock(def, x, y)
+    return this.procedureManager.createFromSpec(procedure, x, y)
   }
 
+  /** 新規カスタム手続きを作成してディファインブロックを配置する */
   private createProcedureBlock(x: number, y: number): string | null {
-    const procedure = normalizeProcedure(createDefaultProcedure())
-    const nextProcedures = [...this.snapshot.customProcedures, procedure]
-    this.setCustomProcedures(nextProcedures)
-    return this.addBlock(`${buildProcedureBlockDefs(procedure)[0].id}`, x, y)
+    return this.procedureManager.createBlock(x, y)
   }
 
-  private cloneProcedureDefinition(procedure: CustomProcedure): CustomProcedure {
-    const paramIdMap = new Map<string, string>()
-    const params = procedure.params.map((param) => {
-      const nextId = createDefaultProcedureParam(param.valueType).id
-      paramIdMap.set(param.id, nextId)
-      return {
-        ...param,
-        id: nextId,
-      }
-    })
-    const tokens = procedure.tokens.map((token) =>
-      token.type === "label"
-        ? { ...token, id: `token-${Date.now()}-${Math.random()}` }
-        : {
-            ...token,
-            id: `token-${Date.now()}-${Math.random()}`,
-            paramId: paramIdMap.get(token.paramId) ?? token.paramId,
-          }
-    )
-    return normalizeProcedure({
-      ...procedure,
-      id: `procedure-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      params,
-      tokens,
-    })
-  }
-
+  /** 手続きと関連ブロック（ディファイン・コール・引数）を全て削除する */
   private removeProcedure(procedureId: string): void {
-    const data = this.exportProjectData()
-    const procedure = data.customProcedures.find((item) => item.id === procedureId)
-    if (!procedure) return
-    const defIds = new Set(buildProcedureBlockDefs(procedure).map((def) => def.id))
-    const removedIds = new Set(
-      data.workspace.blocks
-        .filter((block) => defIds.has(block.defId))
-        .map((block) => block.instanceId)
-    )
-    const workspaceBlocks = data.workspace.blocks
-      .filter((block) => !removedIds.has(block.instanceId))
-      .map((block) => ({
-        ...block,
-        nextId: block.nextId && removedIds.has(block.nextId) ? null : block.nextId,
-        bodyChildren: block.bodyChildren.map((body) =>
-          body.filter((id) => !removedIds.has(id))
-        ),
-        slotChildren: Object.fromEntries(
-          Object.entries(block.slotChildren).filter(
-            ([, childId]) => !removedIds.has(childId)
-          )
-        ),
-      }))
-
-    this.rebuildFromProjectData(
-      {
-        customProcedures: data.customProcedures.filter(
-          (item) => item.id !== procedureId
-        ),
-        workspace: { blocks: workspaceBlocks },
-      },
-      false
-    )
+    this.procedureManager.remove(procedureId)
   }
 
+  /** 単一ブロックインスタンスを削除する（コネクタ・ゾーン・スロットのクリーンアップ含む） */
   private deleteBlockInstance(blockId: string): void {
     if (!this.workspace) return
     const created = this.createdMap.get(blockId)
@@ -636,6 +494,7 @@ export class BlockEditorController {
     this.bumpRevision()
   }
 
+  /** シーンを構築する。保留データがあればリストア、なければサンプルシーン */
   private rebuildScene(workspace: Workspace, containers: Container[]): void {
     const pending = this.pendingProjectData
     this.pendingProjectData = null
@@ -670,6 +529,7 @@ export class BlockEditorController {
     this.setCustomProcedures([])
   }
 
+  /** プロジェクトデータからワークスペース全体を再構築する */
   private rebuildFromProjectData(
     projectData: BlockProjectData,
     useSampleIfEmpty: boolean
@@ -692,213 +552,32 @@ export class BlockEditorController {
       return
     }
 
-    const createdList: CreatedBlock[] = []
-    const idMap = new Map<string, CreatedBlock>()
-    const nodeMap = new Map(
-      projectData.workspace.blocks.map((node) => [node.instanceId, node] as const)
+    rebuildBlocks(
+      this.workspace,
+      projectData,
+      this.snapConnections,
+      (created) => this.registerCreatedBlocks(created),
+      (containers) => this.containers.push(...containers),
+      (blockId, inputIndex, containerId) =>
+        this.setNestedSlot(blockId, inputIndex, containerId),
     )
 
-    for (const node of projectData.workspace.blocks) {
-      const def = getBlockDefById(node.defId, projectData.customProcedures)
-      if (!def) continue
-      const created = createBlock(
-        this.workspace,
-        def,
-        node.position.x,
-        node.position.y
-      )
-      for (const [key, value] of Object.entries(node.inputValues)) {
-        const inputIndex = getInputIndexBySerializationKey(def, key)
-        if (inputIndex >= 0) {
-          created.state.inputValues[inputIndex] = value
-        }
-      }
-      createdList.push(created)
-      this.containers.push(created.container)
-      idMap.set(node.instanceId, created)
-    }
-
-    this.registerCreatedBlocks(createdList)
-
-    const bodyMembers = new Set<string>()
-    const slotMembers = new Set<string>()
-    for (const node of projectData.workspace.blocks) {
-      for (const body of node.bodyChildren) {
-        for (const childId of body) {
-          bodyMembers.add(childId)
-        }
-      }
-      for (const childId of Object.values(node.slotChildren)) {
-        slotMembers.add(childId)
-      }
-    }
-
-    const topLevelPairs: Array<[CreatedBlock, CreatedBlock]> = []
-    const detachedChainRoots = new Set<string>()
-    for (const node of projectData.workspace.blocks) {
-      if (!node.nextId) continue
-      if (bodyMembers.has(node.nextId) || slotMembers.has(node.nextId)) continue
-      const parent = idMap.get(node.instanceId)
-      const child = idMap.get(node.nextId)
-      if (parent && child) {
-        if (!parent.bottomConn || !child.topConn) {
-          detachedChainRoots.add(node.nextId)
-          continue
-        }
-        topLevelPairs.push([child, parent])
-      }
-    }
-
-    if (topLevelPairs.length > 0) {
-      connectStackPairs({
-        workspace: this.workspace,
-        snapConnections: this.snapConnections,
-        pairs: topLevelPairs,
-      })
-    }
-
-    for (const rootId of detachedChainRoots) {
-      this.offsetDetachedTopLevelChain(
-        rootId,
-        nodeMap,
-        idMap,
-        bodyMembers,
-        slotMembers
-      )
-    }
-
-    for (const node of projectData.workspace.blocks) {
-      const owner = idMap.get(node.instanceId)
-      if (!owner?.cBlockRef) continue
-      node.bodyChildren.forEach((body, bodyIndex) => {
-        const layout = owner.cBlockRef?.bodyLayouts[bodyIndex]
-        if (!layout) return
-        body.forEach((childId, index) => {
-          const child = idMap.get(childId)
-          if (!child) return
-          layout.insertElement(child.container, index)
-        })
-        syncBodyLayoutChain(layout)
-        layout.update()
-      })
-      alignCBlockBodyEntryConnectors(owner.cBlockRef)
-    }
-
-    for (const node of projectData.workspace.blocks) {
-      const owner = idMap.get(node.instanceId)
-      if (!owner) continue
-      for (const [key, childId] of Object.entries(node.slotChildren)) {
-        const child = idMap.get(childId)
-        if (!child) continue
-        const inputIndex = getInputIndexBySerializationKey(owner.state.def, key)
-        if (inputIndex === -1) continue
-        const slot = owner.slotLayouts.find(
-          (item) => item.info.inputIndex === inputIndex
-        )
-        if (!slot) continue
-        if (!slot.info.acceptedShapes.includes(child.state.def.shape as never)) {
-          child.container.move(
-            child.container.position.x + 24,
-            child.container.position.y + 24
-          )
-          continue
-        }
-        slot.layout.insertElement(child.container, 0)
-        this.setNestedSlot(owner.state.id, inputIndex, child.state.id)
-      }
-    }
-
-    relayoutCreatedBlocks(createdList)
     this.finalizeWorkspaceRegistration()
   }
 
+  /** 現在のワークスペース状態をシリアライズする */
   private exportWorkspaceData() {
-    const blocks: SerializedBlockNode[] = Array.from(this.createdMap.values()).map(
-      (created) => {
-        const inputValues = Object.fromEntries(
-          Object.entries(created.state.inputValues).map(([index, value]) => {
-            const inputIndex = Number(index)
-            const input = created.state.def.inputs[inputIndex]
-            return [
-              getInputSerializationKey(created.state.def, input, inputIndex),
-              value,
-            ]
-          })
-        )
-
-        const slotChildren = Object.fromEntries(
-          Object.entries(this.snapshot.nestedSlots)
-            .filter(([key]) => key.startsWith(`${created.state.id}-`))
-            .map(([key, childId]) => {
-              const inputIndex = Number(key.split("-").at(-1) ?? -1)
-              const input = created.state.def.inputs[inputIndex]
-              return [
-                getInputSerializationKey(created.state.def, input, inputIndex),
-                childId,
-              ]
-            })
-        )
-
-        const bodyChildren = created.cBlockRef
-          ? created.cBlockRef.bodyLayouts.map((layout) =>
-              layout.Children.map((child) => child.id)
-            )
-          : []
-
-        const nextId =
-          Array.from(created.container.Children).find(
-            (child) => child.Parent === created.container
-          )?.id ?? null
-
-        return {
-          instanceId: created.state.id,
-          defId: created.state.def.id,
-          inputValues,
-          position: {
-            x: created.container.position.x,
-            y: created.container.position.y,
-          },
-          nextId,
-          bodyChildren,
-          slotChildren,
-        }
-      }
-    )
-
-    return { blocks }
+    return exportWorkspaceBlocks(this.createdMap, this.snapshot.nestedSlots)
   }
 
-  private offsetDetachedTopLevelChain(
-    rootId: string,
-    nodeMap: ReadonlyMap<string, SerializedBlockNode>,
-    idMap: ReadonlyMap<string, CreatedBlock>,
-    bodyMembers: ReadonlySet<string>,
-    slotMembers: ReadonlySet<string>
-  ): void {
-    let currentId: string | null = rootId
-    while (currentId) {
-      const created = idMap.get(currentId)
-      if (created) {
-        created.container.move(
-          created.container.position.x + 32,
-          created.container.position.y + 32
-        )
-      }
-      const node = nodeMap.get(currentId)
-      const nextId = node?.nextId ?? null
-      if (!nextId || bodyMembers.has(nextId) || slotMembers.has(nextId)) {
-        break
-      }
-      currentId = nextId
-    }
-  }
-
+  /** オブザーバー登録・描画順序同期・リビジョン更新をまとめて実行する */
   private finalizeWorkspaceRegistration(): void {
     this.refreshObservers()
     this.syncRenderOrder()
     this.bumpRevision()
   }
 
+  /** 接続同期・サイズ監視・近接判定ループを開始する */
   private finalizeConnectionObservers(): void {
     if (!this.workspace) return
     this.stopConnectionSync = subscribeCBlockConnectionSync({
@@ -924,6 +603,7 @@ export class BlockEditorController {
     )
   }
 
+  /** 生成済みブロックをマップに登録し、スナップ接続・ゾーンを構築する */
   private registerCreatedBlocks(created: CreatedBlock[]): void {
     for (const block of created) {
       this.createdMap.set(block.container.id, block)
@@ -952,6 +632,7 @@ export class BlockEditorController {
     )
   }
 
+  /** ゾーン登録用のブロックレジストリを構築する */
   private buildRegistry(): { blockMap: Map<string, BlockState>; createdMap: Map<string, CreatedBlock> } {
     const blockMap = new Map<string, BlockState>()
     for (const [id, block] of this.createdMap) {
@@ -960,14 +641,10 @@ export class BlockEditorController {
     return { blockMap, createdMap: this.createdMap }
   }
 
+  /** ワークスペースの状態をリセットする（オブザーバー停止・データクリア） */
   private resetWorkspaceState(workspace: Workspace, containers: Container[]): void {
     this.containers = containers
-    this.stopProximityLoop?.()
-    this.stopProximityLoop = null
-    this.stopConnectionSync?.()
-    this.stopConnectionSync = null
-    this.stopSizeObservers?.()
-    this.stopSizeObservers = null
+    this.cleanupObservers()
 
     resetEditorWorkspace(
       workspace,
@@ -983,18 +660,14 @@ export class BlockEditorController {
     this.resetCaches()
   }
 
+  /** ワークスペースからアンマウントして全リソースを解放する */
   unmount(expectedWorkspace?: Workspace): void {
     if (expectedWorkspace && this.workspace !== expectedWorkspace) {
       return
     }
 
     const workspace = this.workspace
-    this.stopProximityLoop?.()
-    this.stopConnectionSync?.()
-    this.stopSizeObservers?.()
-    this.stopProximityLoop = null
-    this.stopConnectionSync = null
-    this.stopSizeObservers = null
+    this.cleanupObservers()
 
     if (workspace) {
       syncProximityHighlights(workspace, this.activeBodyProximityIds, new Map())
@@ -1024,6 +697,7 @@ export class BlockEditorController {
     this.setBlocks([])
   }
 
+  /** ブロック定義からブロックを生成・登録・オブザーバー更新する */
   private insertBlock(def: BlockState["def"], x: number, y: number): string | null {
     if (!this.workspace) return null
     const created = createBlock(this.workspace, def, x, y)
@@ -1035,16 +709,28 @@ export class BlockEditorController {
     return created.container.id
   }
 
+  /** オブザーバーを停止して再開する。エラー時もリークしないよう try-finally で保護 */
   private refreshObservers(): void {
+    this.cleanupObservers()
+    try {
+      this.finalizeConnectionObservers()
+    } catch (e) {
+      this.cleanupObservers()
+      throw e
+    }
+  }
+
+  /** 全オブザーバーを停止する */
+  private cleanupObservers(): void {
     this.stopProximityLoop?.()
     this.stopConnectionSync?.()
     this.stopSizeObservers?.()
     this.stopProximityLoop = null
     this.stopConnectionSync = null
     this.stopSizeObservers = null
-    this.finalizeConnectionObservers()
   }
 
+  /** CブロックIDとCBlockRefの逆引きマップを再構築する */
   private rebuildCBlockRefMap(): void {
     this.cBlockRefMap.clear()
     for (const ref of this.cBlockRefs) {
@@ -1052,29 +738,24 @@ export class BlockEditorController {
     }
   }
 
+  /** 内部キャッシュ（containerMap・cBlockRefMap・proximityIds）をクリアする */
   private resetCaches(): void {
     this.containerMap.clear()
     this.cBlockRefMap.clear()
     this.activeBodyProximityIds.clear()
   }
 
+  /** カスタム変数を追加する（重複は無視） */
   addVariable(name: string): void {
-    if (this.snapshot.customVariables.includes(name)) return
-    this.snapshot = {
-      ...this.snapshot,
-      customVariables: [...this.snapshot.customVariables, name],
-    }
-    this.emit()
+    this.variableManager.add(name)
   }
 
+  /** カスタム変数を削除する */
   removeVariable(name: string): void {
-    this.snapshot = {
-      ...this.snapshot,
-      customVariables: this.snapshot.customVariables.filter((v) => v !== name),
-    }
-    this.emit()
+    this.variableManager.remove(name)
   }
 
+  /** カスタム手続き一覧を設定して購読者に通知する */
   private setCustomProcedures(customProcedures: CustomProcedure[]): void {
     this.snapshot = {
       ...this.snapshot,
@@ -1083,10 +764,12 @@ export class BlockEditorController {
     this.emit()
   }
 
+  /** ネスト構造に基づいてコンテナの描画順序を同期する */
   private syncRenderOrder(): boolean {
     return this.applyRenderOrder(sortContainersForNestedRender(this.containers))
   }
 
+  /** 新しい描画順序を適用し、変更があればスナップショットを更新する */
   private applyRenderOrder(nextContainers: Container[]): boolean {
     const nextBlocks = nextContainers.flatMap((container) => {
       const state = this.createdMap.get(container.id)?.state
@@ -1111,6 +794,7 @@ export class BlockEditorController {
     return true
   }
 
+  /** ブロック一覧を設定して購読者に通知する */
   private setBlocks(blocks: BlockState[]): void {
     this.snapshot = {
       ...this.snapshot,
@@ -1119,6 +803,7 @@ export class BlockEditorController {
     this.emit()
   }
 
+  /** ネストスロット全体を設定する */
   private setNestedSlots(nestedSlots: Record<string, string>): void {
     this.snapshot = {
       ...this.snapshot,
@@ -1127,6 +812,7 @@ export class BlockEditorController {
     this.emit()
   }
 
+  /** 個別のネストスロットを設定・解除する */
   private setNestedSlot(
     blockId: string,
     inputIndex: number,
@@ -1150,6 +836,7 @@ export class BlockEditorController {
     })
   }
 
+  /** スナップショットの参照を更新して購読者に変更を通知する */
   private bumpRevision(): void {
     this.snapshot = {
       ...this.snapshot,
@@ -1157,6 +844,7 @@ export class BlockEditorController {
     this.emit()
   }
 
+  /** ブロックチェーンを描画順序の最前面に移動する */
   private bringChainToFront(blockId: string): void {
     const root = this.containerMap.get(blockId)
     if (!root || this.containers.length === 0 || this.snapshot.blocks.length === 0) {
@@ -1177,6 +865,7 @@ export class BlockEditorController {
     this.applyRenderOrder(nextContainers)
   }
 
+  /** ブロックIDからスタック接続で繋がったチェーン全体のIDリストを返す */
   getChainIds(blockId: string): string[] {
     const root = this.containerMap.get(blockId)
     if (!root) return [blockId]
@@ -1184,6 +873,7 @@ export class BlockEditorController {
     return chain.map((c: Container) => c.id)
   }
 
+  /** 全購読者に変更を通知する */
   private emit(): void {
     for (const listener of this.listeners) {
       listener()

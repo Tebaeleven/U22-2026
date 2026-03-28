@@ -16,6 +16,7 @@ import {
   resolveBlockBehavior,
 } from "./blocks"
 
+/** ブロック定義からコンテナ・コネクタ・スロットを生成してワークスペースに配置する */
 export function createBlock(
   ws: Workspace,
   def: BlockDef,

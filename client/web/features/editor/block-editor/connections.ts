@@ -20,6 +20,30 @@ import type {
 import { isValueBlockShape, resolveBlockBehavior } from "./blocks"
 import { findBodyLayoutHit, hasPriorityCBlockBodyHit } from "./layout"
 
+/** ドラッグ判定のゾーン優先度（値が大きいほど優先） */
+const ZONE_PRIORITY = {
+  BODY: 200,    // Cブロック内部（最優先）
+  SLOT: 150,    // スロットはめ込み
+  SNAP: 100,    // スタック接続
+} as const
+
+const SLOT_ZONE_PADDING = 0
+const BODY_ZONE_PADDING = 10
+const SLOT_CENTER_TOLERANCE = { x: 30, y: 20 }
+
+/** ドラッグされたブロックの形状を検証するバリデーターを生成する */
+function createShapeValidator(
+  createdMap: Map<string, CreatedBlock>,
+  acceptedShapes: readonly string[]
+): (dragged: { id: string }) => boolean {
+  return (dragged) => {
+    const shape = createdMap.get(dragged.id)?.state.def.shape
+    if (!shape || !isValueBlockShape(shape)) return false
+    return acceptedShapes.includes(shape)
+  }
+}
+
+/** ブーリアンスロット用のネスティングゾーンを生成する */
 function createBooleanSlotZone(
   ws: Workspace,
   block: CreatedBlock,
@@ -30,11 +54,11 @@ function createBooleanSlotZone(
     target: block.container,
     layout: slot.layout,
     workspace: ws,
-    priority: 150,
-    padding: 0,
+    priority: ZONE_PRIORITY.SLOT,
+    padding: SLOT_ZONE_PADDING,
     validator: (dragged) => {
       if (slot.layout.Children.length > 0) return false
-      return createdMap.get(dragged.id)?.state.def.shape === "boolean"
+      return createShapeValidator(createdMap, ["boolean"])(dragged)
     },
     connectorHit: (dragged) => {
       const draggedBlock = createdMap.get(dragged.id)
@@ -48,6 +72,7 @@ function createBooleanSlotZone(
   })
 }
 
+/** スタックブロック同士のスナップ接続を登録する */
 export function registerSnapConnections(
   ws: Workspace,
   created: CreatedBlock[],
@@ -65,7 +90,7 @@ export function registerSnapConnections(
       getContainer: (block) => block.container,
       getTopConnector: (block) => block.topConn,
       getBottomConnector: (block) => block.bottomConn,
-      priority: 100,
+      priority: ZONE_PRIORITY.SNAP,
       validator: ({ source, target }) => () => {
         if (hasPriorityCBlockBodyHit(source, target, createdMap)) {
           return false
@@ -79,10 +104,12 @@ export function registerSnapConnections(
   )
 }
 
+/** スナップ接続のロック状態を追跡するためのキーを生成する */
 function getStackConnectionKey(sourceId: string, targetId: string): string {
   return `${sourceId}->${targetId}`
 }
 
+/** 全スナップ接続を破棄して再構築する。ロック状態は維持する */
 export function rebuildStackSnapConnections(
   ws: Workspace,
   snapConnections: SnapConnection[],
@@ -119,6 +146,7 @@ export function rebuildStackSnapConnections(
   }
 }
 
+/** Cブロックのボディゾーン（ブロックをネストできる領域）を登録する */
 export function registerCBlockBodyZones(
   ws: Workspace,
   created: CreatedBlock[],
@@ -139,8 +167,8 @@ export function registerCBlockBodyZones(
         layout,
         workspace: ws,
         entryConnector: bodyEntryConnector ?? undefined,
-        priority: 200,
-        padding: 10,
+        priority: ZONE_PRIORITY.BODY,
+        padding: BODY_ZONE_PADDING,
         accepts: (dragged) => {
           const draggedState = registry.blockMap.get(dragged.id)
           return !(draggedState && isValueBlockShape(draggedState.def.shape))
@@ -157,6 +185,7 @@ export function registerCBlockBodyZones(
   }
 }
 
+/** レポーター/ブーリアンスロットのネスティングゾーンを登録する */
 export function registerSlotZones(
   ws: Workspace,
   created: CreatedBlock[],
@@ -177,15 +206,11 @@ export function registerSlotZones(
             target: block.container,
             layout,
             workspace: ws,
-            priority: 150,
+            priority: ZONE_PRIORITY.SLOT,
             occupancy: "single",
-            accepts: (dragged) => {
-              const shape = registry.createdMap.get(dragged.id)?.state.def.shape
-              if (!shape || !isValueBlockShape(shape)) return false
-              return info.acceptedShapes.includes(shape)
-            },
-            centerTolerance: { x: 30, y: 20 },
-            padding: 0,
+            accepts: createShapeValidator(registry.createdMap, info.acceptedShapes),
+            centerTolerance: SLOT_CENTER_TOLERANCE,
+            padding: SLOT_ZONE_PADDING,
           })
 
       nestingZones.push(zone)
@@ -197,6 +222,7 @@ export function registerSlotZones(
   }
 }
 
+/** ドラッグ中のブロックに対するボディゾーンの近接ヒットを収集する */
 export function collectBodyZoneProximityHits(
   bodyZoneMap: Map<NestingZone, BodyZoneMeta>,
   createdMap: Map<string, CreatedBlock>

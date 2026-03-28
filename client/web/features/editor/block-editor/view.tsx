@@ -184,9 +184,14 @@ function InlineToken({
     // スプライト関連ドロップダウンは動的にoptionsを差し替える
     const spriteConfig = block.def.opcode ? SPRITE_DROPDOWN_OPCODES[block.def.opcode] : undefined
     const isSpriteDropdown = spriteConfig && spriteConfig.inputIndex === index && spriteNames
-    const options = isSpriteDropdown
+    const baseOptions = isSpriteDropdown
       ? [...spriteConfig.prefixOptions, ...spriteNames]
       : input.options
+    // 現在の選択値がoptionsに含まれない場合でもフォールバックを防ぐ
+    const currentValue = getInputValue(input, block, index)
+    const options = currentValue && !baseOptions.includes(currentValue)
+      ? [...baseOptions, currentValue]
+      : baseOptions
 
     return (
       <span className="scratch-slot-host" style={hostStyle}>

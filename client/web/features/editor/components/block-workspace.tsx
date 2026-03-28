@@ -358,14 +358,11 @@ export function BlockWorkspace({
       const workspace = new Workspace()
       workspaceRef.current = workspace
       sharedWorkspace = workspace
-      new SvgRenderer(svgElement, workspace)
+      // SvgRenderer はデバッグモード時のみ生成（別の useEffect で管理）
       controller.mount(workspace, containersRef.current)
     }
 
     const workspace = workspaceRef.current!
-    if (!isFirstMount) {
-      new SvgRenderer(svgElement, workspace)
-    }
 
     const mouse = getMouseState(canvasElement, {
       mousedown: (_buttonState, mousePosition, event) => {
@@ -614,6 +611,48 @@ export function BlockWorkspace({
       keyboardRef.current = null
     }
   }, [isActive])
+
+  // デバッグ表示: SvgRenderer の条件付き生成・破棄
+  // debugView=true の時だけ専用 SVG を追加して SvgRenderer を生成
+  // false に戻ったらその SVG を DOM から除去（メインの SVG はマーキー用に残す）
+  const debugSvgRef = useRef<SVGSVGElement | null>(null)
+  useEffect(() => {
+    const canvas = canvasRef.current
+    const mainSvg = svgRef.current
+    const workspace = workspaceRef.current
+    if (!canvas || !mainSvg || !workspace) return
+
+    if (debugView) {
+      // デバッグ用 SVG を作成しメイン SVG の前に挿入
+      const debugSvg = document.createElementNS("http://www.w3.org/2000/svg", "svg") as SVGSVGElement
+      debugSvg.style.width = "100%"
+      debugSvg.style.height = "100%"
+      debugSvg.style.position = "absolute"
+      debugSvg.style.top = "0"
+      debugSvg.style.left = "0"
+      debugSvg.style.pointerEvents = "none"
+      canvas.insertBefore(debugSvg, mainSvg)
+      debugSvgRef.current = debugSvg
+
+      // SvgRenderer を生成（デバッグ用 SVG に描画）
+      new SvgRenderer(debugSvg, workspace)
+
+      // 既存の全要素を再描画させるため workspace の要素を再通知
+      for (const el of workspace.elements) {
+        workspace.eventBus.emit("add", el)
+      }
+      for (const edge of workspace.edges) {
+        workspace.eventBus.emit("add", edge)
+      }
+
+      return () => {
+        // デバッグ OFF 時: SVG を DOM から除去
+        // SvgRenderer のイベントハンドラは detach された DOM に書き込むだけなので無害
+        debugSvg.remove()
+        debugSvgRef.current = null
+      }
+    }
+  }, [debugView])
 
   const editingProcedure = editorState
     ? controller.getCustomProcedure(editorState.procedureId) ?? null

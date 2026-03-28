@@ -36,6 +36,7 @@ export {
   isCBlockBodyLayout,
 }
 
+/** ボディレイアウトからコンテナを切り離す */
 export function detachFromBodyLayoutChain(
   layout: AutoLayout,
   container: Container
@@ -43,10 +44,12 @@ export function detachFromBodyLayoutChain(
   blockStack.detachFromLayout(layout, container)
 }
 
+/** ボディレイアウト内のブロックチェーンを同期する */
 export function syncBodyLayoutChain(layout: AutoLayout) {
   blockStack.syncLayout(layout)
 }
 
+/** ルートコンテナに続くフォロワーチェーンをボディレイアウトから引き出す */
 export function pullFollowerChainOutOfBodyLayout(
   root: Container,
   layout: AutoLayout
@@ -54,6 +57,7 @@ export function pullFollowerChainOutOfBodyLayout(
   blockStack.pullFollowerChainOutOfLayout(root, layout)
 }
 
+/** ドラッグ中のブロックがボディレイアウト内のどの位置に挿入されるかを判定する */
 export function findBodyLayoutHit(
   dragged: Container,
   bodyLayout: AutoLayout | undefined,
@@ -80,6 +84,7 @@ export function findBodyLayoutHit(
   }
 }
 
+/** ソースブロックがターゲットのCブロックボディにヒットしているかを判定する */
 export function hasPriorityCBlockBodyHit(
   sourceBlock: CreatedBlock,
   targetBlock: CreatedBlock,
@@ -112,10 +117,12 @@ export function hasPriorityCBlockBodyHit(
   return false
 }
 
+/** Cブロックのボディエントリコネクタ位置をアンカーに基づいて再配置する */
 export function alignCBlockBodyEntryConnectors(cBlockRef: CBlockRef): void {
   cBlockRef.container.refreshAnchoredChildren()
 }
 
+/** 親レイアウトに属さないスタックチェーンのフォロワー位置を同期する */
 function syncDetachedStackFollowers(root: Container): void {
   const chain = collectConnectedChain(root)
   if (chain.length < 2) return
@@ -129,15 +136,18 @@ function syncDetachedStackFollowers(root: Container): void {
   }
 }
 
-export function relayoutSlotsAndFitBlock(block: CreatedBlock): void {
+/** スロット寸法・ヘッダー高さ・インライン配置を計算して必要な幅・高さを返す */
+function computeSlotLayout(
+  block: CreatedBlock,
+  isCBlock: boolean,
+  baseSize: { w: number; h: number }
+): { headerHeight: number; requiredWidth: number; requiredHeight: number } {
   const { def, inputValues } = block.state
-  const behavior = resolveBlockBehavior(def)
-  const isCBlock = behavior.bodies.length > 0
-  const baseSize = behavior.size
   const slotByIndex = new Map(
     block.slotLayouts.map((slot) => [slot.info.inputIndex, slot])
   )
 
+  // スロット寸法の更新
   let maxInlineHeight = 0
   for (const slot of block.slotLayouts) {
     const input = def.inputs[slot.info.inputIndex]
@@ -155,6 +165,7 @@ export function relayoutSlotsAndFitBlock(block: CreatedBlock): void {
     )
   }
 
+  // ヘッダー高さの計算
   const baseHeaderHeight = isCBlock ? C_HEADER_H : baseSize.h
   const headerHeight = Math.ceil(
     Math.max(
@@ -163,6 +174,7 @@ export function relayoutSlotsAndFitBlock(block: CreatedBlock): void {
     )
   )
 
+  // インライントークンのカーソルベース配置
   let cursor =
     INLINE_PADDING_X +
     estimateTextWidth(def.name) +
@@ -209,62 +221,60 @@ export function relayoutSlotsAndFitBlock(block: CreatedBlock): void {
   )
   const requiredHeight = Math.max(baseSize.h, headerHeight)
 
-  if (isCBlock) {
-    const container = block.container
-    container.minWidth = C_W
-    container.padding.top = headerHeight
+  return { headerHeight, requiredWidth, requiredHeight }
+}
 
-    const innerMinWidth = Math.max(
-      C_W - container.padding.left - container.padding.right,
-      requiredWidth - container.padding.left - container.padding.right
+/** Cブロックのコンテナサイズを計算・適用する */
+function applyCBlockLayout(
+  block: CreatedBlock,
+  behavior: ReturnType<typeof resolveBlockBehavior>,
+  baseSize: { w: number; h: number },
+  headerHeight: number,
+  requiredWidth: number,
+  requiredHeight: number
+): void {
+  const container = block.container
+  container.minWidth = C_W
+  container.padding.top = headerHeight
+
+  const innerMinWidth = Math.max(
+    C_W - container.padding.left - container.padding.right,
+    requiredWidth - container.padding.left - container.padding.right
+  )
+
+  if (block.cBlockRef) {
+    const minimumBodyHeight =
+      block.cBlockRef.bodyLayouts.length * C_BODY_MIN_H +
+      (behavior.contentGap ?? container.contentGap) *
+        Math.max(0, block.cBlockRef.bodyLayouts.length - 1)
+    container.minHeight = Math.max(
+      baseSize.h,
+      container.padding.top + minimumBodyHeight + container.padding.bottom
     )
 
-    if (block.cBlockRef) {
-      const minimumBodyHeight =
-        block.cBlockRef.bodyLayouts.length * C_BODY_MIN_H +
-        (behavior.contentGap ?? container.contentGap) *
-          Math.max(0, block.cBlockRef.bodyLayouts.length - 1)
-      container.minHeight = Math.max(
-        baseSize.h,
-        container.padding.top + minimumBodyHeight + container.padding.bottom
-      )
-
-      for (let i = 0; i < block.cBlockRef.bodyLayouts.length; i += 1) {
-        const layout = block.cBlockRef.bodyLayouts[i]
-        layout.position.x = container.padding.left
-        if (i === 0) layout.position.y = container.padding.top
-        layout.minWidth = innerMinWidth
-        layout.minHeight = C_BODY_MIN_H
-      }
-
-      let contentWidth = innerMinWidth
-      for (const layout of block.cBlockRef.bodyLayouts) {
-        layout.update()
-        contentWidth = Math.max(contentWidth, layout.width)
-      }
-      container.applyContentSize(contentWidth, minimumBodyHeight)
-      alignCBlockBodyEntryConnectors(block.cBlockRef)
-    } else {
-      container.minHeight = Math.max(
-        baseSize.h,
-        container.padding.top + C_BODY_MIN_H + container.padding.bottom
-      )
-      const changed =
-        container.width !== requiredWidth ||
-        container.height !== requiredHeight
-      container.width = requiredWidth
-      container.height = requiredHeight
-      if (changed) {
-        container.update()
-        container.parentAutoLayout?.update()
-      }
+    for (let i = 0; i < block.cBlockRef.bodyLayouts.length; i += 1) {
+      const layout = block.cBlockRef.bodyLayouts[i]
+      layout.position.x = container.padding.left
+      if (i === 0) layout.position.y = container.padding.top
+      layout.minWidth = innerMinWidth
+      layout.minHeight = C_BODY_MIN_H
     }
+
+    let contentWidth = innerMinWidth
+    for (const layout of block.cBlockRef.bodyLayouts) {
+      layout.update()
+      contentWidth = Math.max(contentWidth, layout.width)
+    }
+    container.applyContentSize(contentWidth, minimumBodyHeight)
+    alignCBlockBodyEntryConnectors(block.cBlockRef)
   } else {
-    const container = block.container
-    container.minWidth = baseSize.w
-    container.minHeight = baseSize.h
+    container.minHeight = Math.max(
+      baseSize.h,
+      container.padding.top + C_BODY_MIN_H + container.padding.bottom
+    )
     const changed =
-      container.width !== requiredWidth || container.height !== requiredHeight
+      container.width !== requiredWidth ||
+      container.height !== requiredHeight
     container.width = requiredWidth
     container.height = requiredHeight
     if (changed) {
@@ -272,12 +282,49 @@ export function relayoutSlotsAndFitBlock(block: CreatedBlock): void {
       container.parentAutoLayout?.update()
     }
   }
+}
+
+/** スタックブロック（非Cブロック）のコンテナサイズを適用する */
+function applyStackLayout(
+  block: CreatedBlock,
+  baseSize: { w: number; h: number },
+  requiredWidth: number,
+  requiredHeight: number
+): void {
+  const container = block.container
+  container.minWidth = baseSize.w
+  container.minHeight = baseSize.h
+  const changed =
+    container.width !== requiredWidth || container.height !== requiredHeight
+  container.width = requiredWidth
+  container.height = requiredHeight
+  if (changed) {
+    container.update()
+    container.parentAutoLayout?.update()
+  }
+}
+
+/** ブロックのスロットサイズを再計算し、コンテナサイズを調整する */
+export function relayoutSlotsAndFitBlock(block: CreatedBlock): void {
+  const behavior = resolveBlockBehavior(block.state.def)
+  const isCBlock = behavior.bodies.length > 0
+  const baseSize = behavior.size
+
+  const { headerHeight, requiredWidth, requiredHeight } =
+    computeSlotLayout(block, isCBlock, baseSize)
+
+  if (isCBlock) {
+    applyCBlockLayout(block, behavior, baseSize, headerHeight, requiredWidth, requiredHeight)
+  } else {
+    applyStackLayout(block, baseSize, requiredWidth, requiredHeight)
+  }
 
   if (!block.container.parentAutoLayout) {
     syncDetachedStackFollowers(block.container)
   }
 }
 
+/** 複数ブロックをボトムアップ順でレイアウトする（ネストの深い子から処理） */
 export function relayoutCreatedBlocks(created: CreatedBlock[]) {
   // ボトムアップ順で処理（深いネストの子ブロックを先に relayout し、
   // 親 C ブロックの幅計算が正しくなるようにする）
@@ -289,6 +336,7 @@ export function relayoutCreatedBlocks(created: CreatedBlock[]) {
   }
 }
 
+/** コンテナのAutoLayoutネスト深度を計算する */
 function autoLayoutDepth(container: { parentAutoLayout?: { parentContainer?: { parentAutoLayout?: unknown } | null } | null }): number {
   let depth = 0
   let current = container.parentAutoLayout
@@ -300,6 +348,7 @@ function autoLayoutDepth(container: { parentAutoLayout?: { parentContainer?: { p
   return depth
 }
 
+/** 指定ブロックから親方向に遡ってレイアウトを再計算する */
 export function relayoutBlockAndAncestors(
   startBlockId: string,
   createdMap: Map<string, CreatedBlock>

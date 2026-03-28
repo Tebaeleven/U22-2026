@@ -1,6 +1,9 @@
 // ブロックエディタの型定義
 import type { AutoLayout, Connector, Container, Position } from "headless-vpl"
 
+// ─── ブロック形状 ───
+
+/** ブロックの形状を表す識別子 */
 export type BlockShape =
   | "hat"
   | "stack"
@@ -10,16 +13,22 @@ export type BlockShape =
   | "reporter"
   | "boolean"
 
+/** 値を返すブロック形状（スロットにはめ込み可能） */
 export type ValueBlockShape = "reporter" | "boolean"
 
+// ─── カスタム手続き（マイブロック） ───
+
+/** 手続きパラメータの値型 */
 export type ProcedureParamType = "text" | "number"
 
+/** カスタム手続きのパラメータ定義 */
 export type CustomProcedureParam = {
   id: string
   name: string
   valueType: ProcedureParamType
 }
 
+/** 手続きのトークン（ラベルまたはパラメータ参照） */
 export type CustomProcedureToken =
   | {
       id: string
@@ -32,6 +41,7 @@ export type CustomProcedureToken =
       paramId: string
     }
 
+/** カスタム手続きの定義情報 */
 export type CustomProcedure = {
   id: string
   name: string
@@ -40,34 +50,43 @@ export type CustomProcedure = {
   returnsValue: boolean
 }
 
+// ─── ブロックソース（ブロックの生成元） ───
+
+/** ビルトインブロック */
 export type BuiltinBlockSource = {
   kind: "builtin"
 }
 
+/** マイブロック定義の初期テンプレート */
 export type StarterDefineBlockSource = {
   kind: "starter-define"
 }
 
+/** カスタム手続きのディファインブロック */
 export type CustomDefineBlockSource = {
   kind: "custom-define"
   procedureId: string
 }
 
+/** カスタム手続きのコールブロック */
 export type CustomCallBlockSource = {
   kind: "custom-call"
   procedureId: string
 }
 
+/** カスタム手続きの引数ブロック */
 export type CustomArgumentBlockSource = {
   kind: "custom-argument"
   procedureId: string
   paramId: string
 }
 
+/** カスタム手続きの戻り値ブロック */
 export type CustomReturnBlockSource = {
   kind: "custom-return"
 }
 
+/** ブロックの生成元を表す判別共用体 */
 export type BlockSource =
   | BuiltinBlockSource
   | StarterDefineBlockSource
@@ -76,6 +95,9 @@ export type BlockSource =
   | CustomArgumentBlockSource
   | CustomReturnBlockSource
 
+// ─── ブロック定義・入力 ───
+
+/** ハットブロック上のヘッダーレポーターコピー定義 */
 export type HeaderReporterCopy = {
   label?: string
   labelInputIndex?: number
@@ -85,6 +107,7 @@ export type HeaderReporterCopy = {
   inputBindings?: Record<number, number>
 }
 
+/** ブロックの入力スロット定義（ラベル・数値・テキスト・ドロップダウン等） */
 export type InputDef =
   | {
       type: "number"
@@ -132,6 +155,7 @@ export type InputDef =
     }
   | { type: "label"; text: string }
 
+/** ブロックのカテゴリ（パレットのタブに対応） */
 export type BlockCategory =
   | "motion"
   | "looks"
@@ -145,6 +169,7 @@ export type BlockCategory =
   | "myblocks"
   | "physics"
 
+/** ブロックの型定義。形状・色・入力・カテゴリ・オペコードを持つ */
 export type BlockDef = {
   id: string
   name: string
@@ -158,12 +183,16 @@ export type BlockDef = {
   paletteHidden?: boolean
 }
 
+// ─── ランタイム状態 ───
+
+/** ブロック1つの実行時状態。定義と入力値を持つ */
 export type BlockState = {
   id: string
   def: BlockDef
   inputValues: Record<number, string>
 }
 
+/** Cブロックのレイアウト情報。ボディレイアウト・エントリコネクタ・ボトムコネクタへの参照 */
 export type CBlockRef = {
   container: Container
   bodyLayouts: AutoLayout[]
@@ -171,6 +200,7 @@ export type CBlockRef = {
   bottomConnector: Connector | null
 }
 
+/** スロット（レポーター/ブーリアンのはめ込み位置）の幾何情報 */
 export type SlotInfo = {
   inputIndex: number
   x: number
@@ -180,12 +210,14 @@ export type SlotInfo = {
   acceptedShapes: ValueBlockShape[]
 }
 
+/** スロットのAutoLayoutとコネクタへの参照 */
 export type SlotLayoutRef = {
   info: SlotInfo
   layout: AutoLayout
   connector: Connector | null
 }
 
+/** ワークスペース上に配置されたブロック。コンテナ・コネクタ・状態を一括管理 */
 export type CreatedBlock = {
   container: Container
   topConn: Connector | null
@@ -196,12 +228,16 @@ export type CreatedBlock = {
   state: BlockState
 }
 
+/** ブロックの状態・コンテナ・生成情報のレジストリ */
 export type BlockRegistry = {
   blockMap: Map<string, BlockState>
   createdMap: Map<string, CreatedBlock>
   containerMap: Map<string, Container>
 }
 
+// ─── シリアライズ ───
+
+/** シリアライズされたブロック1つの永続化データ */
 export type SerializedBlockNode = {
   instanceId: string
   defId: string
@@ -215,47 +251,60 @@ export type SerializedBlockNode = {
   slotChildren: Record<string, string>
 }
 
+/** ワークスペース全体のシリアライズデータ */
 export type BlockWorkspaceData = {
   blocks: SerializedBlockNode[]
 }
 
+/** スプライト1つ分のプロジェクトデータ。カスタム手続き + ワークスペースデータ */
 export type BlockProjectData = {
   customProcedures: CustomProcedure[]
   customVariables?: string[]
   workspace: BlockWorkspaceData
 }
 
+// ─── ゾーン・接続メタデータ ───
+
+/** スロットゾーンのメタ情報（どのブロックのどの入力か） */
 export type SlotZoneMeta = {
   blockId: string
   inputIndex: number
 }
 
+/** ボディゾーンのメタ情報（Cブロックのエントリコネクタ） */
 export type BodyZoneMeta = {
   bodyEntryConnector: Connector | null | undefined
 }
 
+/** ボディレイアウトへのドラッグヒット結果 */
 export type BodyLayoutHit = {
   insertIndex: number
   targetConnector: Connector
   draggedBlock: CreatedBlock
 }
 
+/** サンプルシーンの初期ブロック群 */
 export type SampleScene = {
   created: CreatedBlock[]
   definitions: Record<string, CreatedBlock>
 }
 
+// ─── ブロック振る舞い設定 ───
+
+/** 形状ごとの基本設定（サイズ・コネクタ・ボディ） */
 export type ShapeConfig = {
   size: { w: number; h: number }
   connectors: { top: boolean; bottom: boolean; value?: boolean }
   bodies?: { minHeight: number }[]
 }
 
+/** Cブロックのボディ1つの振る舞い */
 export type BlockBodyBehavior = {
   minHeight: number
   hasEntryConnector: boolean
 }
 
+/** ブロックの振る舞い（形状設定 + オーバーライドを解決した最終結果） */
 export type BlockBehavior = {
   size: { w: number; h: number }
   connectors: { top: boolean; bottom: boolean; value: boolean }
@@ -263,6 +312,7 @@ export type BlockBehavior = {
   contentGap?: number
 }
 
+/** 近接判定のヒット結果。ドラッグ中のスナップ候補を表す */
 export type ProximityHit = {
   source: Container
   sourcePosition: Position

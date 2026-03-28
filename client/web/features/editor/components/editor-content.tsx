@@ -61,6 +61,7 @@ import {
   type BlockCategoryId,
   type ColliderDef,
 } from "@/features/editor/constants"
+import { SAMPLE_PROJECTS, resolveSample } from "@/features/editor/samples"
 import { Flag, Pause, Square } from "lucide-react"
 import { Button } from "@/components/ui/button"
 
@@ -334,6 +335,41 @@ export function EditorContent() {
     dispatch(restoreSnapshot())
   }, [dispatch])
 
+  // ─── サンプルプロジェクト読み込み ────────────────
+
+  const [currentSampleId, setCurrentSampleId] = useState(SAMPLE_PROJECTS[0].id)
+
+  const sampleInfos = useMemo(
+    () => SAMPLE_PROJECTS.map((s) => ({ id: s.id, name: s.name, description: s.description })),
+    [],
+  )
+
+  const handleLoadSample = useCallback((sampleId: string) => {
+    const sample = SAMPLE_PROJECTS.find((s) => s.id === sampleId)
+    if (!sample) return
+
+    // 実行中なら停止
+    if (runtimeRef.current?.isRunning) {
+      runtimeRef.current.stop()
+      dispatch(stopRuntime())
+    }
+
+    const { sprites: newSprites, blockDataMap: newBlockData } = resolveSample(sample)
+    const firstSpriteId = newSprites[0]?.id ?? ""
+
+    // 全データを一括更新
+    dispatch(loadAllBlockData(newBlockData))
+    dispatch(setSprites(newSprites))
+    dispatch(selectSprite(firstSpriteId))
+    dispatch(setProjectName(sample.name))
+
+    // コントローラーにも即座にロード
+    const firstData = newBlockData[firstSpriteId] ?? DEFAULT_BLOCK_PROJECT_DATA
+    getController().loadProjectData(firstData)
+
+    setCurrentSampleId(sampleId)
+  }, [dispatch])
+
   // ─── コスチューム操作 ─────────────────────────────
 
   const handleAddCostume = useCallback(
@@ -458,13 +494,14 @@ export function EditorContent() {
             sprite={selectedSprite ?? null}
             spriteIndex={selectedSpriteIndex}
             onUpdate={(id, changes) => {
-              if (changes.name !== undefined) {
-                const oldName = sprites.find((s) => s.id === id)?.name
-                if (oldName && oldName !== changes.name) {
-                  getController().renameSpriteInBlocks(oldName, changes.name)
-                }
-              }
+              const oldName = changes.name !== undefined
+                ? sprites.find((s) => s.id === id)?.name
+                : undefined
+              console.log("[onUpdate]", { id, changes, oldName, willRename: !!(oldName && changes.name && oldName !== changes.name) })
               dispatch(updateSprite({ id, changes }))
+              if (oldName && changes.name && oldName !== changes.name) {
+                getController().renameSpriteInBlocks(oldName, changes.name)
+              }
             }}
             onSetCollider={(id, collider) => handleSetCollider(id, collider)}
           />
@@ -585,6 +622,9 @@ export function EditorContent() {
         onResetLayout={handleResetLayout}
         debugView={debugView}
         onToggleDebugView={() => setDebugView((v) => !v)}
+        samples={sampleInfos}
+        currentSampleId={currentSampleId}
+        onLoadSample={handleLoadSample}
       />
 
       <div className="flex-1 min-h-0">
