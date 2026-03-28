@@ -61,65 +61,23 @@ export function findBodyLayoutHit(
   createdMap: Map<string, CreatedBlock>
 ): BodyLayoutHit | null {
   const draggedBlock = createdMap.get(dragged.id)
-  if (!draggedBlock || !bodyLayout) return null
+  if (!draggedBlock?.topConn || !bodyLayout) return null
 
-  const sourceConnectors = getBodyNestingSourceConnectors(draggedBlock)
-  for (const sourceConnector of sourceConnectors) {
-    const hit = findConnectorInsertHit({
-      dragged,
-      layout: bodyLayout,
-      entryConnector: bodyEntryConnector ?? undefined,
-      getDraggedConnector: () => sourceConnector,
-      getChildConnector: (child) => createdMap.get(child.id)?.bottomConn,
-    })
+  const hit = findConnectorInsertHit({
+    dragged,
+    layout: bodyLayout,
+    entryConnector: bodyEntryConnector ?? undefined,
+    getDraggedConnector: () => draggedBlock.topConn,
+    getChildConnector: (child) => createdMap.get(child.id)?.bottomConn,
+  })
 
-    if (!hit) {
-      if (bodyEntryConnector) {
-        const dx = sourceConnector.position.x - bodyEntryConnector.position.x
-        const dy = sourceConnector.position.y - bodyEntryConnector.position.y
-        const dist = Math.sqrt(dx * dx + dy * dy)
-        const threshold = sourceConnector.hitRadius + bodyEntryConnector.hitRadius
-        if (dist < threshold * 3) {
-          console.debug("[findBodyLayoutHit] miss:", {
-            source: sourceConnector.name,
-            dist: Math.round(dist),
-            threshold,
-            sourcePos: { x: Math.round(sourceConnector.position.x), y: Math.round(sourceConnector.position.y) },
-            targetPos: { x: Math.round(bodyEntryConnector.position.x), y: Math.round(bodyEntryConnector.position.y) },
-          })
-        }
-      }
-      continue
-    }
+  if (!hit) return null
 
-    return {
-      insertIndex: hit.insertIndex,
-      sourceConnector,
-      targetConnector: hit.targetConnector,
-      draggedBlock,
-    }
+  return {
+    insertIndex: hit.insertIndex,
+    targetConnector: hit.targetConnector,
+    draggedBlock,
   }
-
-  return null
-}
-
-function getBodyNestingSourceConnectors(block: CreatedBlock): Connector[] {
-  const connectors: Connector[] = []
-  const seen = new Set<string>()
-
-  const pushConnector = (connector: Connector | null | undefined) => {
-    if (!connector || seen.has(connector.id)) return
-    seen.add(connector.id)
-    connectors.push(connector)
-  }
-
-  const behavior = resolveBlockBehavior(block.state.def)
-  if (behavior.bodies.length > 0) {
-    pushConnector(block.cBlockRef?.bodyEntryConnectors[0])
-  }
-  pushConnector(block.topConn)
-
-  return connectors
 }
 
 export function hasPriorityCBlockBodyHit(
@@ -129,7 +87,7 @@ export function hasPriorityCBlockBodyHit(
 ): boolean {
   const targetBehavior = resolveBlockBehavior(targetBlock.state.def)
   if (
-    getBodyNestingSourceConnectors(sourceBlock).length === 0 ||
+    !sourceBlock.topConn ||
     !targetBlock.cBlockRef ||
     targetBehavior.bodies.length === 0
   ) {

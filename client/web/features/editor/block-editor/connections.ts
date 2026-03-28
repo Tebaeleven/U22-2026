@@ -1,10 +1,9 @@
 // ブロック接続・ゾーン登録・近接判定
 import {
-  either,
   createSlotZone,
   createStackSnapConnections,
 } from "headless-vpl/helpers"
-import { isConnectorColliding } from "headless-vpl/blocks"
+import { createConnectorInsertZone, isConnectorColliding } from "headless-vpl/blocks"
 import { NestingZone } from "headless-vpl"
 import type {
   SnapConnection,
@@ -12,6 +11,7 @@ import type {
 } from "headless-vpl"
 import type { ProximityHit } from "headless-vpl/blocks"
 import type {
+  BlockState,
   BodyZoneMeta,
   CBlockRef,
   CreatedBlock,
@@ -19,11 +19,6 @@ import type {
 } from "./types"
 import { isValueBlockShape, resolveBlockBehavior } from "./blocks"
 import { findBodyLayoutHit, hasPriorityCBlockBodyHit } from "./layout"
-
-export function canNestInCBlockBody(block: CreatedBlock | undefined): boolean {
-  const shape = block?.state.def.shape
-  return Boolean(shape && !isValueBlockShape(shape))
-}
 
 function createBooleanSlotZone(
   ws: Workspace,
@@ -71,7 +66,6 @@ export function registerSnapConnections(
       getTopConnector: (block) => block.topConn,
       getBottomConnector: (block) => block.bottomConn,
       priority: 100,
-      strategy: () => either,
       validator: ({ source, target }) => () => {
         if (hasPriorityCBlockBodyHit(source, target, createdMap)) {
           return false
@@ -128,7 +122,7 @@ export function rebuildStackSnapConnections(
 export function registerCBlockBodyZones(
   ws: Workspace,
   created: CreatedBlock[],
-  createdMap: Map<string, CreatedBlock>,
+  registry: { blockMap: Map<string, BlockState>; createdMap: Map<string, CreatedBlock> },
   cBlockRefs: CBlockRef[],
   nestingZones: NestingZone[],
   bodyZoneMap: Map<NestingZone, BodyZoneMeta>
@@ -140,37 +134,21 @@ export function registerCBlockBodyZones(
 
     block.cBlockRef.bodyLayouts.forEach((layout, index) => {
       const bodyEntryConnector = block.cBlockRef?.bodyEntryConnectors[index]
-      const zone = new NestingZone({
+      const zone = createConnectorInsertZone({
         target: block.container,
         layout,
         workspace: ws,
+        entryConnector: bodyEntryConnector ?? undefined,
         priority: 200,
         padding: 10,
-        validator: (dragged) => {
-          const draggedBlock = createdMap.get(dragged.id)
-          if (!canNestInCBlockBody(draggedBlock)) {
-            console.debug("[bodyZone validator] rejected: canNestInCBlockBody false", {
-              id: dragged.id,
-              shape: draggedBlock?.state.def.shape,
-            })
-            return false
-          }
-          const hit = findBodyLayoutHit(dragged, layout, bodyEntryConnector, createdMap)
-          if (!hit) {
-            console.debug("[bodyZone validator] rejected: findBodyLayoutHit null", {
-              id: dragged.id,
-              shape: draggedBlock?.state.def.shape,
-            })
-          }
-          return hit !== null
+        accepts: (dragged) => {
+          const draggedState = registry.blockMap.get(dragged.id)
+          return !(draggedState && isValueBlockShape(draggedState.def.shape))
         },
-        connectorHit: (dragged, currentLayout) =>
-          findBodyLayoutHit(
-            dragged,
-            currentLayout,
-            bodyEntryConnector,
-            createdMap
-          )?.insertIndex ?? null,
+        getDraggedConnector: (dragged) =>
+          registry.createdMap.get(dragged.id)?.topConn,
+        getChildConnector: (child) =>
+          registry.createdMap.get(child.id)?.bottomConn,
       })
 
       nestingZones.push(zone)
@@ -182,7 +160,7 @@ export function registerCBlockBodyZones(
 export function registerSlotZones(
   ws: Workspace,
   created: CreatedBlock[],
-  createdMap: Map<string, CreatedBlock>,
+  registry: { blockMap: Map<string, BlockState>; createdMap: Map<string, CreatedBlock> },
   nestingZones: NestingZone[],
   slotZoneMap: Map<NestingZone, SlotZoneMeta>
 ) {
@@ -194,7 +172,7 @@ export function registerSlotZones(
         info.acceptedShapes.length === 1 &&
         info.acceptedShapes[0] === "boolean"
       const zone = isBooleanSlot
-        ? createBooleanSlotZone(ws, block, createdMap, slot)
+        ? createBooleanSlotZone(ws, block, registry.createdMap, slot)
         : createSlotZone({
             target: block.container,
             layout,
@@ -202,7 +180,7 @@ export function registerSlotZones(
             priority: 150,
             occupancy: "single",
             accepts: (dragged) => {
-              const shape = createdMap.get(dragged.id)?.state.def.shape
+              const shape = registry.createdMap.get(dragged.id)?.state.def.shape
               if (!shape || !isValueBlockShape(shape)) return false
               return info.acceptedShapes.includes(shape)
             },
@@ -235,9 +213,9 @@ export function collectBodyZoneProximityHits(
       meta.bodyEntryConnector,
       createdMap
     )
-    if (!hit) continue
+    if (!hit?.draggedBlock.topConn) continue
 
-    const sourceConnector = hit.sourceConnector
+    const sourceConnector = hit.draggedBlock.topConn
     const targetConnector = hit.targetConnector
     const connectionId = `body-hit:${sourceConnector.id}:${targetConnector.id}`
     hits.set(connectionId, {

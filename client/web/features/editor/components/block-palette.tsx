@@ -15,6 +15,7 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog"
 import { BLOCK_CATEGORIES, type BlockCategoryId } from "@/features/editor/constants"
+import { useAppSelector } from "@/lib/store"
 import {
   DEFAULT_VARIABLES,
   getPaletteBlockDefs,
@@ -355,9 +356,11 @@ export function BlockPalette({
     controller.getSnapshot,
     controller.getSnapshot
   )
+  const spriteNames = useAppSelector((s) => s.sprites.list.map((sp) => sp.name))
   const filteredBlocks = getPaletteBlockDefs(
     selectedCategory,
-    snapshot.customProcedures
+    snapshot.customProcedures,
+    spriteNames
   )
 
   const [paletteContextMenu, setPaletteContextMenu] = useState<PaletteContextMenuState>(null)

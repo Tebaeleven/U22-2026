@@ -17,6 +17,7 @@ import {
   C_HEADER_H,
   C_W,
   INLINE_SLOT_BASE_H,
+  SPRITE_DROPDOWN_OPCODES,
   getHeaderReporterCopies,
   getHeaderReporterCopyLabel,
   getInputDisplayValue,
@@ -55,6 +56,7 @@ function InlineToken({
   createdBlock,
   nestedSlots,
   customVariables,
+  spriteNames,
   onInputValueChange,
   onParamChipMouseDown,
   onReporterCopyMouseDown,
@@ -65,6 +67,7 @@ function InlineToken({
   createdBlock?: CreatedBlock
   nestedSlots: Record<string, string>
   customVariables?: string[]
+  spriteNames?: string[]
   onInputValueChange?: (
     blockId: string,
     inputIndex: number,
@@ -177,6 +180,14 @@ function InlineToken({
     const extraOptions = isVariableDropdown && customVariables
       ? customVariables.filter((v) => !input.options.includes(v))
       : []
+
+    // スプライト関連ドロップダウンは動的にoptionsを差し替える
+    const spriteConfig = block.def.opcode ? SPRITE_DROPDOWN_OPCODES[block.def.opcode] : undefined
+    const isSpriteDropdown = spriteConfig && spriteConfig.inputIndex === index && spriteNames
+    const options = isSpriteDropdown
+      ? [...spriteConfig.prefixOptions, ...spriteNames]
+      : input.options
+
     return (
       <span className="scratch-slot-host" style={hostStyle}>
         <select
@@ -186,7 +197,7 @@ function InlineToken({
           }
           style={{ width: slotWidth }}
         >
-          {input.options.map((option) => (
+          {options.map((option) => (
             <option key={option} value={option}>
               {option}
             </option>
@@ -252,6 +263,7 @@ export function BlockView({
   zIndex,
   nestedSlots,
   customVariables,
+  spriteNames,
   onInputValueChange,
   onHeaderReporterMouseDown,
   onParamChipMouseDown,
@@ -265,6 +277,7 @@ export function BlockView({
   zIndex?: number
   nestedSlots?: Record<string, string>
   customVariables?: string[]
+  spriteNames?: string[]
   onInputValueChange?: (
     blockId: string,
     inputIndex: number,
@@ -306,6 +319,7 @@ export function BlockView({
         createdBlock={createdBlock}
         nestedSlots={ns}
         customVariables={customVariables}
+        spriteNames={spriteNames}
         onInputValueChange={onInputValueChange}
         onParamChipMouseDown={onParamChipMouseDown}
         onReporterCopyMouseDown={onHeaderReporterMouseDown}

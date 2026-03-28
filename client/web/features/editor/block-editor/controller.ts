@@ -36,6 +36,7 @@ import {
   getInputIndexBySerializationKey,
   getInputSerializationKey,
   normalizeProcedure,
+  SPRITE_DROPDOWN_OPCODES,
   STARTER_DEFINE_BLOCK_ID,
 } from "./blocks"
 import {
@@ -125,9 +126,6 @@ export class BlockEditorController {
       )
     }
 
-    // ネスト変更後にスナップ接続を再構築（body エントリコネクタとの関係を更新）
-    rebuildStackSnapConnections(this.workspace!, this.snapConnections, this.createdMap)
-
     if (!this.syncRenderOrder()) {
       this.bumpRevision()
     }
@@ -181,6 +179,26 @@ export class BlockEditorController {
     block.state.inputValues[inputIndex] = value
     relayoutBlockAndAncestors(blockId, this.createdMap)
     this.bumpRevision()
+  }
+
+  /** スプライト名変更時に、全ブロックの該当ドロップダウン値を旧名→新名に置換する */
+  renameSpriteInBlocks(oldName: string, newName: string): void {
+    let changed = false
+    for (const created of this.createdMap.values()) {
+      const opcode = created.state.def.opcode
+      if (!opcode) continue
+      const config = SPRITE_DROPDOWN_OPCODES[opcode]
+      if (!config) continue
+      const idx = config.inputIndex
+      const inputDef = created.state.def.inputs[idx]
+      const defaultVal = inputDef && "default" in inputDef ? inputDef.default : undefined
+      const current = created.state.inputValues[idx] ?? defaultVal
+      if (current === oldName) {
+        created.state.inputValues[idx] = newName
+        changed = true
+      }
+    }
+    if (changed) this.bumpRevision()
   }
 
   addBlock(defId: string, x: number, y: number): string | null {
@@ -914,10 +932,12 @@ export class BlockEditorController {
 
     rebuildStackSnapConnections(this.workspace!, this.snapConnections, this.createdMap)
     relayoutCreatedBlocks(created)
+
+    const registry = this.buildRegistry()
     registerCBlockBodyZones(
       this.workspace!,
       created,
-      this.createdMap,
+      registry,
       this.cBlockRefs,
       this.nestingZones,
       this.bodyZoneMap
@@ -926,10 +946,18 @@ export class BlockEditorController {
     registerSlotZones(
       this.workspace!,
       created,
-      this.createdMap,
+      registry,
       this.nestingZones,
       this.slotZoneMap
     )
+  }
+
+  private buildRegistry(): { blockMap: Map<string, BlockState>; createdMap: Map<string, CreatedBlock> } {
+    const blockMap = new Map<string, BlockState>()
+    for (const [id, block] of this.createdMap) {
+      blockMap.set(id, block.state)
+    }
+    return { blockMap, createdMap: this.createdMap }
   }
 
   private resetWorkspaceState(workspace: Workspace, containers: Container[]): void {

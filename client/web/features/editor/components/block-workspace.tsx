@@ -103,6 +103,7 @@ export function BlockWorkspace({
 }) {
   const dispatch = useAppDispatch()
   const blockDataMap = useAppSelector((s) => s.sprites.blockDataMap)
+  const spriteNames = useAppSelector((s) => s.sprites.list.map((sp) => sp.name))
 
   const svgRef = useRef<SVGSVGElement>(null)
   const overlayRef = useRef<HTMLDivElement>(null)
@@ -216,7 +217,7 @@ export function BlockWorkspace({
       const canvasElement = canvasRef.current
       if (!workspace || !mouse || !canvasElement) return
 
-      const def = getBlockDefById(defId, snapshot.customProcedures)
+      const def = getBlockDefById(defId, snapshot.customProcedures, spriteNames)
       if (!def) return
 
       event.preventDefault()
@@ -258,7 +259,7 @@ export function BlockWorkspace({
 
       beginDragForBlock(blockId, screenPos)
     },
-    [beginDragForBlock, snapshot.customProcedures]
+    [beginDragForBlock, snapshot.customProcedures, spriteNames]
   )
 
   const handleHeaderReporterMouseDown = useCallback(
@@ -267,7 +268,7 @@ export function BlockWorkspace({
       copy: HeaderReporterCopy,
       event: ReactMouseEvent<HTMLElement>
     ) => {
-      const defs = getBlockDefs(snapshot.customProcedures)
+      const defs = getBlockDefs(snapshot.customProcedures, spriteNames)
       const def = copy.targetOpcode !== undefined
         ? defs.find(
             (item) =>
@@ -645,6 +646,7 @@ export function BlockWorkspace({
             zIndex={index + 1}
             nestedSlots={snapshot.nestedSlots}
             customVariables={snapshot.customVariables}
+            spriteNames={spriteNames}
             onInputValueChange={controller.updateInputValue.bind(controller)}
             onHeaderReporterMouseDown={handleHeaderReporterMouseDown}
             onParamChipMouseDown={handleParamChipMouseDown}

@@ -1,7 +1,7 @@
 "use client"
 
 import Link from "next/link"
-import { Flag, Square, Pause, Globe, FolderOpen, ChevronLeft, Save, Loader2, RotateCcw, WifiOff } from "lucide-react"
+import { Globe, FolderOpen, ChevronLeft, Save, Loader2, RotateCcw, WifiOff } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import {
@@ -31,11 +31,6 @@ const ALL_TILES: EditorTileId[] = ["palette", "workspace", "stage", "hierarchy",
 interface EditorHeaderProps {
   projectName: string
   onProjectNameChange: (name: string) => void
-  isRunning: boolean
-  isPaused: boolean
-  onRun: () => void
-  onPause: () => void
-  onStop: () => void
   isSaving: boolean
   isOffline?: boolean
   onSave: () => void
@@ -50,11 +45,6 @@ interface EditorHeaderProps {
 export function EditorHeader({
   projectName,
   onProjectNameChange,
-  isRunning,
-  isPaused,
-  onRun,
-  onPause,
-  onStop,
   isSaving,
   isOffline = false,
   onSave,
@@ -133,37 +123,6 @@ export function EditorHeader({
             <Save className="size-3.5 mr-1" />
           )}
           {isSaving ? "保存中..." : isOffline ? "オフライン" : "保存"}
-        </Button>
-      </div>
-
-      {/* 中央 — 再生/一時停止/停止 */}
-      <div className="absolute left-1/2 -translate-x-1/2 flex items-center gap-1">
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          className={`hover:bg-white/10 ${isRunning && !isPaused ? "text-white/50" : "text-green-200"}`}
-          onClick={onRun}
-          disabled={isRunning && !isPaused}
-        >
-          <Flag className="size-4" />
-        </Button>
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          className={`hover:bg-white/10 ${!isRunning || isPaused ? "text-white/50" : "text-yellow-200"}`}
-          onClick={onPause}
-          disabled={!isRunning || isPaused}
-        >
-          <Pause className="size-4" />
-        </Button>
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          className={`hover:bg-white/10 ${!isRunning ? "text-white/50" : "text-red-200"}`}
-          onClick={onStop}
-          disabled={!isRunning}
-        >
-          <Square className="size-4" />
         </Button>
       </div>
 

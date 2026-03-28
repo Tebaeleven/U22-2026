@@ -77,7 +77,16 @@ export function InspectorPanel({
         {/* ヘッダー */}
         <div className="flex items-center gap-2">
           <span className="text-lg">{emoji}</span>
-          <span className="font-medium">{sprite.name}</span>
+          <Input
+            value={sprite.name}
+            onChange={(e) => {
+              const name = e.currentTarget.value
+              if (name.length > 0) {
+                onUpdate(sprite.id, { name })
+              }
+            }}
+            className="h-7 text-sm font-medium"
+          />
         </div>
 
         <Separator />

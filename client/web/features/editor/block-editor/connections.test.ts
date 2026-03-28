@@ -76,6 +76,13 @@ function getBodyEntryConnector(block: CreatedBlock): Connector {
   return connector
 }
 
+function buildRegistry(createdMap: Map<string, CreatedBlock>) {
+  const blockMap = new Map(
+    Array.from(createdMap.entries()).map(([id, block]) => [id, block.state] as const)
+  )
+  return { blockMap, createdMap }
+}
+
 function getBodyZone(
   workspace: Workspace,
   created: CreatedBlock[],
@@ -89,7 +96,7 @@ function getBodyZone(
   registerCBlockBodyZones(
     workspace,
     created,
-    createdMap,
+    buildRegistry(createdMap),
     cBlockRefs,
     nestingZones,
     bodyZoneMap
@@ -105,7 +112,7 @@ function getBodyZone(
 }
 
 describe("registerSnapConnections", () => {
-  test("親側をドラッグした時も stack snap 候補になる", () => {
+  test("子側をドラッグした時に stack snap 候補になる", () => {
     const workspace = new Workspace()
     const parent = createStackBlock(workspace, "Move", 40, 40)
     const child = createStackBlock(workspace, "Wait", 40, 120)
@@ -123,7 +130,6 @@ describe("registerSnapConnections", () => {
 
     expect(connection).toBeDefined()
     expect(connection?.strategy(child.container, parent.container, [child.container])).toBe(true)
-    expect(connection?.strategy(child.container, parent.container, [parent.container])).toBe(true)
     expect(connection?.strategy(child.container, parent.container, [])).toBe(false)
   })
 
@@ -223,103 +229,35 @@ describe("registerSnapConnections", () => {
     }
   })
 
-  test("control_forever（cap-c）は bottomConn を持たず snap 候補を生成しない", () => {
-    const workspace = new Workspace()
-    const owner = createBlockByOpcode(workspace, "control_forever", 40, 40)
-    const child = createStackBlock(workspace, "Move", 200, 40)
-    const created = [owner, child]
-    const createdMap = new Map(created.map((block) => [block.container.id, block] as const))
-    const snapConnections: SnapConnection[] = []
+  test("control_forever と control_if は body hit 時に bottom snap より nesting を優先する", () => {
+    for (const opcode of ["control_forever", "control_if"] as const) {
+      const workspace = new Workspace()
+      const owner = createBlockByOpcode(workspace, opcode, 40, 40)
+      const child = createStackBlock(workspace, "Move", 200, 40)
+      const created = [owner, child]
+      const createdMap = new Map(created.map((block) => [block.container.id, block] as const))
+      const snapConnections: SnapConnection[] = []
 
-    relayoutCreatedBlocks(created)
-    registerSnapConnections(workspace, created, snapConnections, createdMap)
+      relayoutCreatedBlocks(created)
 
-    const connectionBelow = snapConnections.find(
-      (item) => item.source === child.container && item.target === owner.container
-    )
-    expect(connectionBelow).toBeUndefined()
-  })
+      const bodyEntry = owner.cBlockRef?.bodyEntryConnectors[0]
+      if (!bodyEntry) {
+        throw new Error(`missing body entry connector: ${opcode}`)
+      }
+      moveTopConnectorTo(child, bodyEntry.position.x, bodyEntry.position.y)
 
-  test("control_if は body hit 時に bottom snap より nesting を優先する", () => {
-    const workspace = new Workspace()
-    const owner = createBlockByOpcode(workspace, "control_if", 40, 40)
-    const child = createStackBlock(workspace, "Move", 200, 40)
-    const created = [owner, child]
-    const createdMap = new Map(created.map((block) => [block.container.id, block] as const))
-    const snapConnections: SnapConnection[] = []
+      registerSnapConnections(workspace, created, snapConnections, createdMap)
 
-    relayoutCreatedBlocks(created)
+      const connection = snapConnections.find(
+        (item) => item.source === child.container && item.target === owner.container
+      )
 
-    const bodyEntry = owner.cBlockRef?.bodyEntryConnectors[0]
-    if (!bodyEntry) {
-      throw new Error(`missing body entry connector: control_if`)
+      expect(connection).toBeDefined()
+      expect(connection?.validator?.()).toBe(false)
     }
-    moveTopConnectorTo(child, bodyEntry.position.x, bodyEntry.position.y)
-
-    registerSnapConnections(workspace, created, snapConnections, createdMap)
-
-    const connection = snapConnections.find(
-      (item) => item.source === child.container && item.target === owner.container
-    )
-
-    expect(connection).toBeDefined()
-    expect(connection?.validator?.()).toBe(false)
   })
 
-  test("control_if は inner connector を Forever の body entry に合わせると body に入れられる", () => {
-    const workspace = new Workspace()
-    const forever = createBlockByOpcode(workspace, "control_forever", 40, 40)
-    const ifChild = createBlockByOpcode(workspace, "control_if", 200, 40)
-    const created = [forever, ifChild]
-    const createdMap = new Map(created.map((block) => [block.container.id, block] as const))
-
-    relayoutCreatedBlocks(created)
-
-    const targetBodyEntry = getBodyEntryConnector(forever)
-    const sourceBodyEntry = getBodyEntryConnector(ifChild)
-
-    moveConnectorTo(
-      ifChild,
-      sourceBodyEntry,
-      targetBodyEntry.position.x,
-      targetBodyEntry.position.y
-    )
-
-    const zone = getBodyZone(workspace, created, forever, createdMap)
-
-    expect(ifChild.topConn?.position.x).not.toBe(targetBodyEntry.position.x)
-    expect(zone.detectHover([ifChild.container])).toBe(ifChild.container)
-    expect(zone.insertIndex).toBe(0)
-    expect(zone.hovered).toBe(ifChild.container)
-  })
-
-  test("control_forever（cap-c）は control_if との bottom snap を生成しない", () => {
-    const workspace = new Workspace()
-    const forever = createBlockByOpcode(workspace, "control_forever", 40, 40)
-    const ifChild = createBlockByOpcode(workspace, "control_if", 200, 40)
-    const created = [forever, ifChild]
-    const createdMap = new Map(created.map((block) => [block.container.id, block] as const))
-    const snapConnections: SnapConnection[] = []
-
-    relayoutCreatedBlocks(created)
-
-    moveConnectorTo(
-      ifChild,
-      getBodyEntryConnector(ifChild),
-      getBodyEntryConnector(forever).position.x,
-      getBodyEntryConnector(forever).position.y
-    )
-
-    registerSnapConnections(workspace, created, snapConnections, createdMap)
-
-    // Forever は bottomConn を持たないため、if → forever の snap 候補は存在しない
-    const connection = snapConnections.find(
-      (item) => item.source === ifChild.container && item.target === forever.container
-    )
-    expect(connection).toBeUndefined()
-  })
-
-  test("control_if は topConn を Forever の body entry に合わせても body に入れられる", () => {
+  test("control_if は topConn を Forever の body entry に合わせると body に入れられる", () => {
     const workspace = new Workspace()
     const forever = createBlockByOpcode(workspace, "control_forever", 40, 40)
     const ifChild = createBlockByOpcode(workspace, "control_if", 200, 40)
@@ -338,30 +276,29 @@ describe("registerSnapConnections", () => {
     expect(zone.hovered).toBe(ifChild.container)
   })
 
-  test("control_if をボディ内部の中心付近にドラッグしても body に入れられる", () => {
+  test("control_if の topConn で成立した body hit は Forever への bottom snap を抑止する", () => {
     const workspace = new Workspace()
     const forever = createBlockByOpcode(workspace, "control_forever", 40, 40)
-    const ifChild = createBlockByOpcode(workspace, "control_if", 300, 40)
+    const ifChild = createBlockByOpcode(workspace, "control_if", 200, 40)
     const created = [forever, ifChild]
     const createdMap = new Map(created.map((block) => [block.container.id, block] as const))
+    const snapConnections: SnapConnection[] = []
 
     relayoutCreatedBlocks(created)
 
-    const bodyLayout = forever.cBlockRef!.bodyLayouts[0]
-    const bodyCenterX = bodyLayout.absolutePosition.x + bodyLayout.width / 2
-    const bodyCenterY = bodyLayout.absolutePosition.y + bodyLayout.height / 2
-    ifChild.container.move(
-      bodyCenterX - ifChild.container.width / 2,
-      bodyCenterY - ifChild.container.height / 2
+    moveTopConnectorTo(ifChild, getBodyEntryConnector(forever).position.x, getBodyEntryConnector(forever).position.y)
+
+    registerSnapConnections(workspace, created, snapConnections, createdMap)
+
+    const connection = snapConnections.find(
+      (item) => item.source === ifChild.container && item.target === forever.container
     )
 
-    const zone = getBodyZone(workspace, created, forever, createdMap)
-
-    expect(zone.detectHover([ifChild.container])).toBe(ifChild.container)
-    expect(zone.insertIndex).toBe(0)
+    expect(connection).toBeDefined()
+    expect(connection?.validator?.()).toBe(false)
   })
 
-  test("control_repeat も inner connector を Forever の body entry に合わせると body に入れられる", () => {
+  test("control_repeat も topConn を Forever の body entry に合わせると body に入れられる", () => {
     const workspace = new Workspace()
     const forever = createBlockByOpcode(workspace, "control_forever", 40, 40)
     const repeatChild = createBlockByOpcode(workspace, "control_repeat", 200, 40)
@@ -370,12 +307,7 @@ describe("registerSnapConnections", () => {
 
     relayoutCreatedBlocks(created)
 
-    moveConnectorTo(
-      repeatChild,
-      getBodyEntryConnector(repeatChild),
-      getBodyEntryConnector(forever).position.x,
-      getBodyEntryConnector(forever).position.y
-    )
+    moveTopConnectorTo(repeatChild, getBodyEntryConnector(forever).position.x, getBodyEntryConnector(forever).position.y)
 
     const zone = getBodyZone(workspace, created, forever, createdMap)
 

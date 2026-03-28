@@ -4,6 +4,7 @@ export interface PseudocodeSection {
   header: string
   lines: string[]
   kind: "event" | "procedure"
+  spriteName?: string
 }
 
 // ネストされた reporter を優先し、なければ args の文字列値を返す
@@ -54,6 +55,34 @@ export function reporterToInline(block: ScriptBlock): string {
       return `touching(${r("TOUCHINGOBJECTMENU")})`
     case "sensing_keypressed":
       return `isKeyPressed("${r("KEY_OPTION")}")`
+    case "sensing_mousex":
+      return "mouseX"
+    case "sensing_mousey":
+      return "mouseY"
+    case "sensing_timer":
+      return "timer"
+    case "motion_xposition":
+      return "x"
+    case "motion_yposition":
+      return "y"
+    case "motion_direction":
+      return "direction"
+    case "physics_velocityX":
+      return "velocity.x"
+    case "physics_velocityY":
+      return "velocity.y"
+    case "physics_onground":
+      return "isOnGround()"
+    case "physics_collisiontarget":
+      return "collisionTarget"
+    case "looks_costumenumber":
+      return "costumeNumber"
+    case "observer_newvalue":
+      return "newValue"
+    case "observer_oldvalue":
+      return "oldValue"
+    case "observer_eventdata":
+      return "eventData"
     case "data_itemoflist":
       return `${r("LIST")}[${r("INDEX")}]`
     case "data_lengthoflist":
@@ -155,6 +184,12 @@ export function blockToPseudoLines(block: ScriptBlock, indent: number): string[]
         ...body(0),
         `${pad}}`,
       ]
+    case "control_forever":
+      return [
+        `${pad}while (true) {`,
+        ...body(0),
+        `${pad}}`,
+      ]
     case "control_for_range":
       return [
         `${pad}for (${r("NAME")} in ${r("FROM")}..${r("TO")}) {`,
@@ -188,17 +223,79 @@ export function blockToPseudoLines(block: ScriptBlock, indent: number): string[]
     case "data_deleteoflist":
       return [`${pad}${r("LIST")}.removeAt(${r("INDEX")})`]
 
+    // ── Looks 拡張 ──
+    case "looks_show":
+      return [`${pad}show()`]
+    case "looks_hide":
+      return [`${pad}hide()`]
+    case "looks_nextcostume":
+      return [`${pad}nextCostume()`]
+    case "looks_settint":
+      return [`${pad}setTint(${r("COLOR")})`]
+    case "looks_cleartint":
+      return [`${pad}clearTint()`]
+    case "looks_setopacity":
+      return [`${pad}setAlpha(${r("OPACITY")} / 100)`]
+    case "looks_setflipx":
+      return [`${pad}setFlipX(${r("ENABLED")})`]
+    case "looks_addtext":
+      return [`${pad}addText("${r("TEXT")}", ${r("X")}, ${r("Y")})`]
+    case "looks_updatetext":
+      return [`${pad}setText(${r("TEXT")})`]
+    case "looks_removetext":
+      return [`${pad}removeText()`]
+    case "looks_floatingtext":
+      return [`${pad}floatingText("${r("TEXT")}")`]
+
+    // ── Graphics ──
+    case "graphics_fillrect":
+      return [`${pad}graphics.fillRect(${r("X")}, ${r("Y")}, ${r("W")}, ${r("H")}, ${r("COLOR")})`]
+    case "graphics_clear":
+      return [`${pad}graphics.clear()`]
+
     // ── Physics ──
     case "physics_setmode":
-      return [`${pad}physics.mode = "${r("MODE")}"`]
+      return [`${pad}setPhysics("${r("MODE")}")`]
     case "physics_setgravity":
-      return [`${pad}physics.gravity = ${r("GRAVITY")}`]
+      return [`${pad}setGravity(${r("GRAVITY")})`]
     case "physics_setvelocity":
-      return [`${pad}velocity = { x: ${r("VX")}, y: ${r("VY")} }`]
+      return [`${pad}setVelocity(${r("VX")}, ${r("VY")})`]
     case "physics_setvelocityX":
-      return [`${pad}velocity.x = ${r("VX")}`]
+      return [`${pad}setVelocityX(${r("VX")})`]
     case "physics_setvelocityY":
-      return [`${pad}velocity.y = ${r("VY")}`]
+      return [`${pad}setVelocityY(${r("VY")})`]
+    case "physics_setbounce":
+      return [`${pad}setBounce(${r("BOUNCE")})`]
+    case "physics_setcollideworldbounds":
+      return [`${pad}setCollideWorldBounds(${r("ENABLED")})`]
+    case "physics_setallowgravity":
+      return [`${pad}setAllowGravity(${r("ENABLED")})`]
+    case "physics_disablebody":
+      return [`${pad}disableBody()`]
+    case "physics_enablebody":
+      return [`${pad}enableBody()`]
+    case "physics_oncollide":
+      return [`${pad}onCollide("${r("TARGET")}", "${r("EVENT_NAME")}")`]
+
+    // ── Clone ──
+    case "clone_create":
+      return [`${pad}createClone("${r("TARGET")}")`]
+    case "clone_delete":
+      return [`${pad}deleteClone()`]
+
+    // ── Control 拡張 ──
+    case "control_restart":
+      return [`${pad}restart()`]
+
+    // ── Motion 拡張 ──
+    case "motion_ifonedgebounce":
+      return [`${pad}ifOnEdgeBounce()`]
+    case "motion_tweento":
+      return [`${pad}tweenTo(${r("X")}, ${r("Y")}, ${r("SECS")})`]
+
+    // ── Sensing 拡張 ──
+    case "sensing_resettimer":
+      return [`${pad}resetTimer()`]
 
     // ── Procedures ──
     case "procedures_return":
@@ -245,6 +342,10 @@ function hatToHeader(opcode: string, hatArgs: Record<string, unknown>): string {
       return `on varChange(${String(hatArgs["VARIABLE"] ?? "")})`
     case "observer_wheneventreceived":
       return `on event("${String(hatArgs["EVENT_NAME"] ?? "")}")`
+    case "clone_whencloned":
+      return "on clone()"
+    case "event_whentouched":
+      return `on touched("${String(hatArgs["TARGET"] ?? "")}")`
     default:
       return `on ${opcode}`
   }

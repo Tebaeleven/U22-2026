@@ -236,7 +236,6 @@ export type BodyZoneMeta = {
 
 export type BodyLayoutHit = {
   insertIndex: number
-  sourceConnector: Connector
   targetConnector: Connector
   draggedBlock: CreatedBlock
 }

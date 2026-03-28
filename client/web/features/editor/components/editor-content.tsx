@@ -457,67 +457,84 @@ export function EditorContent() {
           <InspectorPanel
             sprite={selectedSprite ?? null}
             spriteIndex={selectedSpriteIndex}
-            onUpdate={(id, changes) => dispatch(updateSprite({ id, changes }))}
+            onUpdate={(id, changes) => {
+              if (changes.name !== undefined) {
+                const oldName = sprites.find((s) => s.id === id)?.name
+                if (oldName && oldName !== changes.name) {
+                  getController().renameSpriteInBlocks(oldName, changes.name)
+                }
+              }
+              dispatch(updateSprite({ id, changes }))
+            }}
             onSetCollider={(id, collider) => handleSetCollider(id, collider)}
           />
         ),
         debug: <DebugPanel runtimeRef={runtimeRef} />,
       }
 
-      const stageToolbar = id === "stage" ? (
-        <div className="flex items-center gap-0.5 mr-1">
-          <Button
-            variant="ghost"
-            size="icon-xs"
-            className={`size-5 ${isRunning && !isPaused ? "text-muted-foreground" : "text-green-600 hover:text-green-700"}`}
-            onClick={handleRun}
-            disabled={isRunning && !isPaused}
-            title="実行"
-          >
-            <Flag className="size-3" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon-xs"
-            className={`size-5 ${!isRunning || isPaused ? "text-muted-foreground" : "text-yellow-600 hover:text-yellow-700"}`}
-            onClick={handlePause}
-            disabled={!isRunning || isPaused}
-            title="一時停止"
-          >
-            <Pause className="size-3" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon-xs"
-            className={`size-5 ${!isRunning ? "text-muted-foreground" : "text-red-600 hover:text-red-700"}`}
-            onClick={handleStop}
-            disabled={!isRunning}
-            title="停止"
-          >
-            <Square className="size-3" />
-          </Button>
-          <div className="mx-0.5 h-3 w-px bg-border" />
-          <button
-            type="button"
-            className="flex size-5 items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
-            onClick={() => setStageExpanded(true)}
-            title="ステージを拡大"
-          >
-            <svg width="12" height="12" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <polyline points="8,1 13,1 13,6" />
-              <polyline points="6,13 1,13 1,8" />
-              <line x1="13" y1="1" x2="8" y2="6" />
-              <line x1="1" y1="13" x2="6" y2="8" />
-            </svg>
-          </button>
-        </div>
+      const stageExpandButton = id === "stage" ? (
+        <button
+          type="button"
+          className="flex size-5 items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors mr-1"
+          onClick={() => setStageExpanded(true)}
+          title="ステージを拡大"
+        >
+          <svg width="12" height="12" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="8,1 13,1 13,6" />
+            <polyline points="6,13 1,13 1,8" />
+            <line x1="13" y1="1" x2="8" y2="6" />
+            <line x1="1" y1="13" x2="6" y2="8" />
+          </svg>
+        </button>
       ) : <></>
+
+      const stageRenderToolbar = id === "stage" ? (
+        () => (
+          <div className="mosaic-window-toolbar flex items-center w-full">
+            <div className="flex items-center gap-0.5 ml-1">
+              <Button
+                variant="ghost"
+                size="icon-xs"
+                className={`size-5 ${isRunning && !isPaused ? "text-muted-foreground" : "text-green-600 hover:text-green-700"}`}
+                onClick={handleRun}
+                disabled={isRunning && !isPaused}
+                title="実行"
+              >
+                <Flag className="size-3" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon-xs"
+                className={`size-5 ${!isRunning || isPaused ? "text-muted-foreground" : "text-yellow-600 hover:text-yellow-700"}`}
+                onClick={handlePause}
+                disabled={!isRunning || isPaused}
+                title="一時停止"
+              >
+                <Pause className="size-3" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon-xs"
+                className={`size-5 ${!isRunning ? "text-muted-foreground" : "text-red-600 hover:text-red-700"}`}
+                onClick={handleStop}
+                disabled={!isRunning}
+                title="停止"
+              >
+                <Square className="size-3" />
+              </Button>
+            </div>
+            <div className="flex-1 text-center text-xs font-medium mosaic-window-title">{TILE_TITLES[id]}</div>
+            {stageExpandButton}
+          </div>
+        )
+      ) : undefined
 
       return (
         <MosaicWindow<EditorTileId>
           path={path}
           title={TILE_TITLES[id]}
-          toolbarControls={stageToolbar}
+          toolbarControls={id === "stage" ? <></> : undefined}
+          renderToolbar={stageRenderToolbar}
         >
           {content[id]}
         </MosaicWindow>
@@ -559,11 +576,6 @@ export function EditorContent() {
       <EditorHeader
         projectName={projectName}
         onProjectNameChange={(name) => dispatch(setProjectName(name))}
-        isRunning={isRunning}
-        isPaused={isPaused}
-        onRun={handleRun}
-        onPause={handlePause}
-        onStop={handleStop}
         isSaving={isSaving}
         isOffline={isOffline}
         onSave={saveProject}

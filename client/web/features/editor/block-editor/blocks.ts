@@ -66,7 +66,7 @@ export const SHAPE_CONFIGS: Record<BlockShape, ShapeConfig> = {
   },
   "cap-c": {
     size: { w: C_W, h: C_HEADER_H + C_BODY_MIN_H + C_FOOTER_H },
-    connectors: { top: true, bottom: false },
+    connectors: { top: true, bottom: true },
     bodies: [{ minHeight: C_BODY_MIN_H }],
   },
   reporter: {
@@ -87,7 +87,14 @@ type BlockBehaviorOverride = {
 
 const BLOCK_BEHAVIOR_OVERRIDES: Partial<
   Record<string, BlockBehaviorOverride>
-> = {}
+> = {
+  control_forever: {
+    connectors: {
+      // 将来的に Forever だけ bottom を false にする変更点をここへ集約する。
+      bottom: true,
+    },
+  },
+}
 
 export function resolveBlockBehavior(blockOrShape: BlockDef | BlockShape): BlockBehavior {
   const def = typeof blockOrShape === "string" ? null : blockOrShape
@@ -242,7 +249,7 @@ function createBuiltinBlockDefs() {
         { type: "number", default: 10 },
       ],
     },
-    { category: "control", name: "Forever", opcode: "control_forever", shape: "cap-c", color: "#FFAB19", inputs: [] },
+    { category: "control", name: "Forever", opcode: "control_forever", shape: "c-block", color: "#FFAB19", inputs: [] },
     { category: "control", name: "If", opcode: "control_if", shape: "c-block", color: "#FFAB19", inputs: [{ type: "boolean-slot" }, { type: "label", text: "then" }] },
     { category: "control", name: "If", opcode: "control_if_else", shape: "c-block-else", color: "#FFAB19", inputs: [{ type: "boolean-slot" }, { type: "label", text: "then" }] },
     { category: "control", name: "Repeat until", opcode: "control_repeat_until", shape: "c-block", color: "#FFAB19", inputs: [{ type: "boolean-slot" }] },
@@ -533,19 +540,48 @@ export function buildProcedureBlockDefs(procedure: CustomProcedure): BlockDef[] 
   ]
 }
 
-export function getBlockDefs(customProcedures: CustomProcedure[]): BlockDef[] {
+// スプライト名を動的に注入するopcodeとそのプレフィックスオプション
+export const SPRITE_DROPDOWN_OPCODES: Record<string, { prefixOptions: string[]; inputIndex: number }> = {
+  sensing_touchingobject: { prefixOptions: ["mouse-pointer", "edge"], inputIndex: 0 },
+  clone_create: { prefixOptions: ["myself"], inputIndex: 0 },
+  physics_oncollide: { prefixOptions: ["any"], inputIndex: 0 },
+  event_whentouched: { prefixOptions: ["any"], inputIndex: 0 },
+}
+
+function injectSpriteNames(defs: BlockDef[], spriteNames: string[]): BlockDef[] {
+  return defs.map((def) => {
+    if (!def.opcode) return def
+    const config = SPRITE_DROPDOWN_OPCODES[def.opcode]
+    if (!config) return def
+    const input = def.inputs[config.inputIndex]
+    if (input?.type !== "dropdown") return def
+    const newInputs = [...def.inputs]
+    newInputs[config.inputIndex] = {
+      ...input,
+      options: [...config.prefixOptions, ...spriteNames],
+    }
+    return { ...def, inputs: newInputs }
+  })
+}
+
+export function getBlockDefs(
+  customProcedures: CustomProcedure[],
+  spriteNames?: string[]
+): BlockDef[] {
   const normalized = customProcedures.map(normalizeProcedure)
-  return [
+  const defs = [
     ...BUILTIN_BLOCK_DEFS,
     ...normalized.flatMap((procedure) => buildProcedureBlockDefs(procedure)),
   ]
+  return spriteNames ? injectSpriteNames(defs, spriteNames) : defs
 }
 
 export function getPaletteBlockDefs(
   category: BlockDef["category"],
-  customProcedures: CustomProcedure[]
+  customProcedures: CustomProcedure[],
+  spriteNames?: string[]
 ): BlockDef[] {
-  return getBlockDefs(customProcedures).filter((def) => {
+  return getBlockDefs(customProcedures, spriteNames).filter((def) => {
     if (def.category !== category) return false
     if (def.paletteHidden) return false
     if (def.source.kind === "custom-define") return false
@@ -556,9 +592,10 @@ export function getPaletteBlockDefs(
 
 export function getBlockDefById(
   defId: string,
-  customProcedures: CustomProcedure[]
+  customProcedures: CustomProcedure[],
+  spriteNames?: string[]
 ): BlockDef | undefined {
-  return getBlockDefs(customProcedures).find((def) => def.id === defId)
+  return getBlockDefs(customProcedures, spriteNames).find((def) => def.id === defId)
 }
 
 export function findBuiltinBlockDefId(

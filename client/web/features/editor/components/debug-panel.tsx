@@ -9,6 +9,7 @@ import type { CompiledProgram, ScriptBlock } from "../engine/types"
 import type { SpriteRuntime } from "../engine/types"
 import type { Runtime } from "../engine/runtime"
 import { programToPseudo, type PseudocodeSection } from "../engine/pseudocode-generator"
+import { compileProgramFromProjectData } from "../engine/program-builder"
 
 type DebugTab = "ast" | "sprites" | "variables" | "vm" | "pseudocode"
 
@@ -572,33 +573,65 @@ function PseudocodeSectionCard({ section }: { section: PseudocodeSection }) {
 }
 
 function PseudocodeView({ runtimeRef: _runtimeRef }: { runtimeRef: React.RefObject<Runtime | null> }) {
-  const [sections, setSections] = useState<PseudocodeSection[]>([])
+  const sprites = useAppSelector((s) => s.sprites.list)
+  const selectedSpriteId = useAppSelector((s) => s.sprites.selectedId)
+  const blockDataMap = useAppSelector((s) => s.sprites.blockDataMap)
+  const [grouped, setGrouped] = useState<Record<string, PseudocodeSection[]>>({})
   const [error, setError] = useState<string | null>(null)
 
   const refresh = useCallback(() => {
     try {
-      const controller = getController()
-      if (!controller) {
-        setSections([])
-        return
+      const result: Record<string, PseudocodeSection[]> = {}
+
+      for (const sprite of sprites) {
+        let sections: PseudocodeSection[]
+
+        if (sprite.id === selectedSpriteId) {
+          // 選択中のスプライト → controller から直接ビルド
+          const controller = getController()
+          if (controller) {
+            sections = programToPseudo(buildScripts(controller))
+          } else {
+            sections = []
+          }
+        } else {
+          // 非選択スプライト → blockDataMap からコンパイル
+          const data = blockDataMap[sprite.id]
+          if (data && data.workspace.blocks.length > 0) {
+            try {
+              sections = programToPseudo(compileProgramFromProjectData(data))
+            } catch {
+              sections = []
+            }
+          } else {
+            sections = []
+          }
+        }
+
+        if (sections.length > 0) {
+          result[sprite.name] = sections
+        }
       }
-      setSections(programToPseudo(buildScripts(controller)))
+
+      setGrouped(result)
       setError(null)
     } catch (e) {
       setError(String(e))
     }
-  }, [])
+  }, [sprites, selectedSpriteId, blockDataMap])
 
   useEffect(() => {
     refresh()
-    const id = setInterval(refresh, 1000)
+    const id = setInterval(refresh, 2000)
     return () => clearInterval(id)
   }, [refresh])
+
+  const entries = Object.entries(grouped)
 
   return (
     <div className="p-2 text-xs">
       <div className="flex items-center justify-between mb-2">
-        <span className="font-semibold text-muted-foreground">疑似コード</span>
+        <span className="font-semibold text-muted-foreground">全体の疑似コード</span>
         <button
           onClick={refresh}
           className="px-2 py-0.5 rounded bg-zinc-100 hover:bg-zinc-200 text-[10px] font-medium"
@@ -611,12 +644,21 @@ function PseudocodeView({ runtimeRef: _runtimeRef }: { runtimeRef: React.RefObje
           {error}
         </div>
       )}
-      {sections.length === 0 ? (
+      {entries.length === 0 ? (
         <div className="text-zinc-400 text-center py-4">スクリプトなし</div>
       ) : (
-        <div className="space-y-3">
-          {sections.map((section, i) => (
-            <PseudocodeSectionCard key={i} section={section} />
+        <div className="space-y-4">
+          {entries.map(([spriteName, sections]) => (
+            <div key={spriteName}>
+              <div className="font-bold text-[11px] mb-1 px-1 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200">
+                🎭 {spriteName}
+              </div>
+              <div className="space-y-2 ml-1">
+                {sections.map((section, i) => (
+                  <PseudocodeSectionCard key={i} section={section} />
+                ))}
+              </div>
+            </div>
           ))}
         </div>
       )}
