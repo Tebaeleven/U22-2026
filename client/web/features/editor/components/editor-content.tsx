@@ -33,10 +33,18 @@ import { EditorHeader, type EditorTileId, TILE_TITLES } from "@/features/editor/
 import { BlockPalette } from "@/features/editor/components/block-palette"
 import { BlockWorkspace } from "@/features/editor/components/block-workspace"
 import { SpriteList } from "@/features/editor/components/sprite-list"
+import { HierarchyPanel } from "@/features/editor/components/hierarchy-panel"
+import { InspectorPanel } from "@/features/editor/components/inspector-panel"
 import { CostumeEditor } from "@/features/editor/components/costume-editor"
 import { SpriteColliderEditor } from "@/features/editor/components/sprite-collider-editor"
 import { useProjectSave } from "@/features/editor/hooks/use-project-save"
 import { PhaserStage, type PhaserStageHandle } from "@/features/editor/renderer/phaser-stage"
+import {
+  Dialog,
+  DialogContent,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import { VisuallyHidden } from "radix-ui"
 import { DebugPanel } from "@/features/editor/components/debug-panel"
 import { buildProgramsForSprites } from "@/features/editor/engine/program-builder"
 import { Runtime } from "@/features/editor/engine/runtime"
@@ -53,6 +61,8 @@ import {
   type BlockCategoryId,
   type ColliderDef,
 } from "@/features/editor/constants"
+import { Flag, Pause, Square } from "lucide-react"
+import { Button } from "@/components/ui/button"
 
 // ─── Mosaic レイアウト ──────────────────────────────
 
@@ -68,9 +78,14 @@ const DEFAULT_LAYOUT: MosaicNode<EditorTileId> = {
       children: [
         "stage",
         "sprites",
-        "debug",
+        {
+          type: "split",
+          direction: "row",
+          children: ["hierarchy", "inspector"],
+          splitPercentages: [35, 65],
+        },
       ],
-      splitPercentages: [40, 25, 35],
+      splitPercentages: [35, 25, 40],
     },
   ],
   splitPercentages: [13, 57, 30],
@@ -165,8 +180,12 @@ export function EditorContent() {
 
   // ワークスペースのタブ（コード / コスチューム / 当たり判定）
   const [editorTab, setEditorTab] = useState<EditorTab>("code")
+  const [stageExpanded, setStageExpanded] = useState(false)
+  const [debugView, setDebugView] = useState(false)
+  const [deletingSpriteId, setDeletingSpriteId] = useState<string | null>(null)
 
   const stageRef = useRef<PhaserStageHandle>(null)
+  const expandedStageRef = useRef<PhaserStageHandle>(null)
   const runtimeRef = useRef<Runtime | null>(null)
 
   const selectedSprite = sprites.find((s) => s.id === selectedSpriteId)
@@ -207,6 +226,7 @@ export function EditorContent() {
     projectId,
     isSaving,
     isLoading,
+    isOffline,
     saveProject,
     shareProject,
     loadProject,
@@ -253,6 +273,7 @@ export function EditorContent() {
 
     runtime.onSpritesUpdate = (runtimeSprites) => {
       stageRef.current?.updateSprites(runtimeSprites)
+      expandedStageRef.current?.updateSprites(runtimeSprites)
       dispatch(
         batchUpdatePositions(
           runtimeSprites.map((s) => ({
@@ -272,7 +293,7 @@ export function EditorContent() {
 
     dispatch(saveSnapshot())
     dispatch(startRuntime())
-    const scene = stageRef.current?.getScene() ?? undefined
+    const scene = expandedStageRef.current?.getScene() ?? stageRef.current?.getScene() ?? undefined
     runtime.start(sprites, programs, scene)
   }, [sprites, selectedSpriteId, blockDataMap, dispatch])
 
@@ -399,6 +420,7 @@ export function EditorContent() {
             }
             onSaveCostume={handleSaveCostume}
             runtimeRef={runtimeRef}
+            debugView={debugView}
           />
         ),
         stage: (
@@ -419,17 +441,83 @@ export function EditorContent() {
             selectedSpriteId={selectedSpriteId}
             onSelectSprite={(id: string) => dispatch(selectSprite(id))}
             onAddSprite={() => dispatch(addSprite())}
-            onDeleteSprite={(id: string) => dispatch(deleteSprite(id))}
+            onDeleteSprite={(id: string) => setDeletingSpriteId(id)}
+          />
+        ),
+        hierarchy: (
+          <HierarchyPanel
+            sprites={sprites}
+            selectedSpriteId={selectedSpriteId}
+            onSelectSprite={(id: string) => dispatch(selectSprite(id))}
+            onAddSprite={() => dispatch(addSprite())}
+            onDeleteSprite={(id: string) => setDeletingSpriteId(id)}
+          />
+        ),
+        inspector: (
+          <InspectorPanel
+            sprite={selectedSprite ?? null}
+            spriteIndex={selectedSpriteIndex}
+            onUpdate={(id, changes) => dispatch(updateSprite({ id, changes }))}
+            onSetCollider={(id, collider) => handleSetCollider(id, collider)}
           />
         ),
         debug: <DebugPanel runtimeRef={runtimeRef} />,
       }
 
+      const stageToolbar = id === "stage" ? (
+        <div className="flex items-center gap-0.5 mr-1">
+          <Button
+            variant="ghost"
+            size="icon-xs"
+            className={`size-5 ${isRunning && !isPaused ? "text-muted-foreground" : "text-green-600 hover:text-green-700"}`}
+            onClick={handleRun}
+            disabled={isRunning && !isPaused}
+            title="実行"
+          >
+            <Flag className="size-3" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon-xs"
+            className={`size-5 ${!isRunning || isPaused ? "text-muted-foreground" : "text-yellow-600 hover:text-yellow-700"}`}
+            onClick={handlePause}
+            disabled={!isRunning || isPaused}
+            title="一時停止"
+          >
+            <Pause className="size-3" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon-xs"
+            className={`size-5 ${!isRunning ? "text-muted-foreground" : "text-red-600 hover:text-red-700"}`}
+            onClick={handleStop}
+            disabled={!isRunning}
+            title="停止"
+          >
+            <Square className="size-3" />
+          </Button>
+          <div className="mx-0.5 h-3 w-px bg-border" />
+          <button
+            type="button"
+            className="flex size-5 items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+            onClick={() => setStageExpanded(true)}
+            title="ステージを拡大"
+          >
+            <svg width="12" height="12" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="8,1 13,1 13,6" />
+              <polyline points="6,13 1,13 1,8" />
+              <line x1="13" y1="1" x2="8" y2="6" />
+              <line x1="1" y1="13" x2="6" y2="8" />
+            </svg>
+          </button>
+        </div>
+      ) : <></>
+
       return (
         <MosaicWindow<EditorTileId>
           path={path}
           title={TILE_TITLES[id]}
-          toolbarControls={<></>}
+          toolbarControls={stageToolbar}
         >
           {content[id]}
         </MosaicWindow>
@@ -450,6 +538,11 @@ export function EditorContent() {
       handleSetCollider,
       handleSaveCostume,
       isRunning,
+      isPaused,
+      handleRun,
+      handlePause,
+      handleStop,
+      debugView,
     ]
   )
 
@@ -472,11 +565,14 @@ export function EditorContent() {
         onPause={handlePause}
         onStop={handleStop}
         isSaving={isSaving}
+        isOffline={isOffline}
         onSave={saveProject}
         onShare={shareProject}
         visibleTiles={visibleTiles}
         onToggleTile={handleToggleTile}
         onResetLayout={handleResetLayout}
+        debugView={debugView}
+        onToggleDebugView={() => setDebugView((v) => !v)}
       />
 
       <div className="flex-1 min-h-0">
@@ -486,6 +582,85 @@ export function EditorContent() {
           onChange={setMosaicLayout}
         />
       </div>
+
+      {/* スプライト削除確認ダイアログ */}
+      <Dialog open={!!deletingSpriteId} onOpenChange={(open) => { if (!open) setDeletingSpriteId(null) }}>
+        <DialogContent className="sm:max-w-[340px]">
+          <DialogTitle>スプライトを削除</DialogTitle>
+          <p className="text-sm text-muted-foreground">
+            「{sprites.find((s) => s.id === deletingSpriteId)?.name}」を削除しますか？この操作は元に戻せません。
+          </p>
+          <div className="flex justify-end gap-2 mt-2">
+            <Button variant="outline" size="sm" onClick={() => setDeletingSpriteId(null)}>
+              キャンセル
+            </Button>
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={() => {
+                if (deletingSpriteId) dispatch(deleteSprite(deletingSpriteId))
+                setDeletingSpriteId(null)
+              }}
+            >
+              削除
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* ステージ拡大ダイアログ */}
+      <Dialog open={stageExpanded} onOpenChange={setStageExpanded}>
+        <DialogContent
+          className="max-w-none w-[min(85vw,85vh*(16/9))] p-0 overflow-hidden sm:max-w-none"
+          showCloseButton={false}
+        >
+          <VisuallyHidden.Root>
+            <DialogTitle>ステージ</DialogTitle>
+          </VisuallyHidden.Root>
+          <div className="relative bg-black" style={{ aspectRatio: "16/9" }}>
+            <PhaserStage
+              ref={expandedStageRef}
+              sprites={sprites}
+              isRunning={isRunning}
+              selectedSpriteId={selectedSpriteId}
+              onSelectSprite={(id) => dispatch(selectSprite(id))}
+              onSpritePositionChange={(id, x, y) =>
+                dispatch(updateSprite({ id, changes: { x, y } }))
+              }
+            />
+            {/* 実行コントロール */}
+            <div className="absolute top-3 left-3 z-20 flex items-center gap-1 rounded-lg bg-black/50 px-2 py-1">
+              <button
+                type="button"
+                className="flex size-8 items-center justify-center rounded text-green-300 hover:bg-white/10 disabled:text-white/30"
+                onClick={handleRun}
+                disabled={isRunning && !isPaused}
+              >
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><polygon points="4,2 14,8 4,14" /></svg>
+              </button>
+              <button
+                type="button"
+                className="flex size-8 items-center justify-center rounded text-red-300 hover:bg-white/10 disabled:text-white/30"
+                onClick={handleStop}
+                disabled={!isRunning}
+              >
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor"><rect x="2" y="2" width="10" height="10" rx="1" /></svg>
+              </button>
+            </div>
+            {/* 閉じるボタン */}
+            <button
+              type="button"
+              className="absolute top-3 right-3 z-20 flex size-8 items-center justify-center rounded-lg bg-black/50 text-white hover:bg-black/70"
+              onClick={() => setStageExpanded(false)}
+            >
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                <line x1="2" y1="2" x2="12" y2="12" />
+                <line x1="12" y1="2" x2="2" y2="12" />
+              </svg>
+            </button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </>
   )
 }
@@ -504,6 +679,7 @@ function WorkspaceWithTabs({
   onSetCollider,
   onSaveCostume,
   runtimeRef,
+  debugView,
 }: {
   editorTab: EditorTab
   onTabChange: (tab: EditorTab) => void
@@ -516,6 +692,7 @@ function WorkspaceWithTabs({
   onSetCollider: (collider: ColliderDef) => void
   onSaveCostume: (costumeId: string, dataUrl: string, width: number, height: number) => void
   runtimeRef: RefObject<Runtime | null>
+  debugView?: boolean
 }) {
   return (
     <div className="flex flex-col h-full">
@@ -560,6 +737,7 @@ function WorkspaceWithTabs({
             runtimeRef={runtimeRef}
             selectedSpriteId={selectedSpriteId}
             isActive={editorTab === "code"}
+            debugView={debugView}
           />
         </div>
 

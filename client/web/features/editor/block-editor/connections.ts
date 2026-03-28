@@ -4,10 +4,7 @@ import {
   createSlotZone,
   createStackSnapConnections,
 } from "headless-vpl/helpers"
-import {
-  createConnectorInsertZone,
-  isConnectorColliding,
-} from "headless-vpl/blocks"
+import { isConnectorColliding } from "headless-vpl/blocks"
 import { NestingZone } from "headless-vpl"
 import type {
   SnapConnection,
@@ -20,8 +17,13 @@ import type {
   CreatedBlock,
   SlotZoneMeta,
 } from "./types"
-import { isValueBlockShape } from "./blocks"
+import { isValueBlockShape, resolveBlockBehavior } from "./blocks"
 import { findBodyLayoutHit, hasPriorityCBlockBodyHit } from "./layout"
+
+export function canNestInCBlockBody(block: CreatedBlock | undefined): boolean {
+  const shape = block?.state.def.shape
+  return Boolean(shape && !isValueBlockShape(shape))
+}
 
 function createBooleanSlotZone(
   ws: Workspace,
@@ -132,27 +134,43 @@ export function registerCBlockBodyZones(
   bodyZoneMap: Map<NestingZone, BodyZoneMeta>
 ) {
   for (const block of created) {
-    if (!block.cBlockRef) continue
+    const behavior = resolveBlockBehavior(block.state.def)
+    if (!block.cBlockRef || behavior.bodies.length === 0) continue
     cBlockRefs.push(block.cBlockRef)
 
     block.cBlockRef.bodyLayouts.forEach((layout, index) => {
       const bodyEntryConnector = block.cBlockRef?.bodyEntryConnectors[index]
-      const zone = createConnectorInsertZone({
+      const zone = new NestingZone({
         target: block.container,
         layout,
         workspace: ws,
-        entryConnector: bodyEntryConnector,
         priority: 200,
         padding: 10,
-        accepts: (dragged) => {
-          const draggedShape = createdMap.get(dragged.id)?.state.def.shape
-          if (!draggedShape) return false
-          return !isValueBlockShape(draggedShape)
+        validator: (dragged) => {
+          const draggedBlock = createdMap.get(dragged.id)
+          if (!canNestInCBlockBody(draggedBlock)) {
+            console.debug("[bodyZone validator] rejected: canNestInCBlockBody false", {
+              id: dragged.id,
+              shape: draggedBlock?.state.def.shape,
+            })
+            return false
+          }
+          const hit = findBodyLayoutHit(dragged, layout, bodyEntryConnector, createdMap)
+          if (!hit) {
+            console.debug("[bodyZone validator] rejected: findBodyLayoutHit null", {
+              id: dragged.id,
+              shape: draggedBlock?.state.def.shape,
+            })
+          }
+          return hit !== null
         },
-        getDraggedConnector: (dragged) =>
-          createdMap.get(dragged.id)?.topConn,
-        getChildConnector: (child) =>
-          createdMap.get(child.id)?.bottomConn,
+        connectorHit: (dragged, currentLayout) =>
+          findBodyLayoutHit(
+            dragged,
+            currentLayout,
+            bodyEntryConnector,
+            createdMap
+          )?.insertIndex ?? null,
       })
 
       nestingZones.push(zone)
@@ -217,9 +235,9 @@ export function collectBodyZoneProximityHits(
       meta.bodyEntryConnector,
       createdMap
     )
-    if (!hit?.draggedBlock.topConn) continue
+    if (!hit) continue
 
-    const sourceConnector = hit.draggedBlock.topConn
+    const sourceConnector = hit.sourceConnector
     const targetConnector = hit.targetConnector
     const connectionId = `body-hit:${sourceConnector.id}:${targetConnector.id}`
     hits.set(connectionId, {

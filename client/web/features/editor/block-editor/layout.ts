@@ -19,12 +19,11 @@ import {
   INLINE_PADDING_X,
   getHeaderReporterCopies,
   getHeaderReporterCopyLabel,
-  getBlockSize,
   getInputValue,
   hatReporterChipWidth,
   inputWidth,
   estimateTextWidth,
-  isCBlockShape,
+  resolveBlockBehavior,
 } from "./blocks"
 
 const blockStack = new BlockStackController()
@@ -58,27 +57,69 @@ export function pullFollowerChainOutOfBodyLayout(
 export function findBodyLayoutHit(
   dragged: Container,
   bodyLayout: AutoLayout | undefined,
-  bodyEntryConnector: Connector | undefined,
+  bodyEntryConnector: Connector | null | undefined,
   createdMap: Map<string, CreatedBlock>
 ): BodyLayoutHit | null {
   const draggedBlock = createdMap.get(dragged.id)
-  if (!draggedBlock?.topConn || !bodyLayout) return null
+  if (!draggedBlock || !bodyLayout) return null
 
-  const hit = findConnectorInsertHit({
-    dragged,
-    layout: bodyLayout,
-    entryConnector: bodyEntryConnector,
-    getDraggedConnector: () => draggedBlock.topConn,
-    getChildConnector: (child) => createdMap.get(child.id)?.bottomConn,
-  })
+  const sourceConnectors = getBodyNestingSourceConnectors(draggedBlock)
+  for (const sourceConnector of sourceConnectors) {
+    const hit = findConnectorInsertHit({
+      dragged,
+      layout: bodyLayout,
+      entryConnector: bodyEntryConnector ?? undefined,
+      getDraggedConnector: () => sourceConnector,
+      getChildConnector: (child) => createdMap.get(child.id)?.bottomConn,
+    })
 
-  if (!hit) return null
+    if (!hit) {
+      if (bodyEntryConnector) {
+        const dx = sourceConnector.position.x - bodyEntryConnector.position.x
+        const dy = sourceConnector.position.y - bodyEntryConnector.position.y
+        const dist = Math.sqrt(dx * dx + dy * dy)
+        const threshold = sourceConnector.hitRadius + bodyEntryConnector.hitRadius
+        if (dist < threshold * 3) {
+          console.debug("[findBodyLayoutHit] miss:", {
+            source: sourceConnector.name,
+            dist: Math.round(dist),
+            threshold,
+            sourcePos: { x: Math.round(sourceConnector.position.x), y: Math.round(sourceConnector.position.y) },
+            targetPos: { x: Math.round(bodyEntryConnector.position.x), y: Math.round(bodyEntryConnector.position.y) },
+          })
+        }
+      }
+      continue
+    }
 
-  return {
-    insertIndex: hit.insertIndex,
-    targetConnector: hit.targetConnector,
-    draggedBlock,
+    return {
+      insertIndex: hit.insertIndex,
+      sourceConnector,
+      targetConnector: hit.targetConnector,
+      draggedBlock,
+    }
   }
+
+  return null
+}
+
+function getBodyNestingSourceConnectors(block: CreatedBlock): Connector[] {
+  const connectors: Connector[] = []
+  const seen = new Set<string>()
+
+  const pushConnector = (connector: Connector | null | undefined) => {
+    if (!connector || seen.has(connector.id)) return
+    seen.add(connector.id)
+    connectors.push(connector)
+  }
+
+  const behavior = resolveBlockBehavior(block.state.def)
+  if (behavior.bodies.length > 0) {
+    pushConnector(block.cBlockRef?.bodyEntryConnectors[0])
+  }
+  pushConnector(block.topConn)
+
+  return connectors
 }
 
 export function hasPriorityCBlockBodyHit(
@@ -86,9 +127,16 @@ export function hasPriorityCBlockBodyHit(
   targetBlock: CreatedBlock,
   createdMap: Map<string, CreatedBlock>
 ): boolean {
-  if (!sourceBlock.topConn || !targetBlock.cBlockRef) return false
+  const targetBehavior = resolveBlockBehavior(targetBlock.state.def)
+  if (
+    getBodyNestingSourceConnectors(sourceBlock).length === 0 ||
+    !targetBlock.cBlockRef ||
+    targetBehavior.bodies.length === 0
+  ) {
+    return false
+  }
 
-  for (let i = 0; i < targetBlock.cBlockRef.bodyLayouts.length; i += 1) {
+  for (let i = 0; i < targetBehavior.bodies.length; i += 1) {
     const layout = targetBlock.cBlockRef.bodyLayouts[i]
     const bodyEntryConnector = targetBlock.cBlockRef.bodyEntryConnectors[i]
     if (
@@ -125,8 +173,9 @@ function syncDetachedStackFollowers(root: Container): void {
 
 export function relayoutSlotsAndFitBlock(block: CreatedBlock): void {
   const { def, inputValues } = block.state
-  const isCBlock = isCBlockShape(def.shape)
-  const baseSize = getBlockSize(def.shape)
+  const behavior = resolveBlockBehavior(def)
+  const isCBlock = behavior.bodies.length > 0
+  const baseSize = behavior.size
   const slotByIndex = new Map(
     block.slotLayouts.map((slot) => [slot.info.inputIndex, slot])
   )
@@ -215,7 +264,7 @@ export function relayoutSlotsAndFitBlock(block: CreatedBlock): void {
     if (block.cBlockRef) {
       const minimumBodyHeight =
         block.cBlockRef.bodyLayouts.length * C_BODY_MIN_H +
-        container.contentGap *
+        (behavior.contentGap ?? container.contentGap) *
           Math.max(0, block.cBlockRef.bodyLayouts.length - 1)
       container.minHeight = Math.max(
         baseSize.h,
@@ -272,9 +321,25 @@ export function relayoutSlotsAndFitBlock(block: CreatedBlock): void {
 }
 
 export function relayoutCreatedBlocks(created: CreatedBlock[]) {
-  for (const block of created) {
+  // ボトムアップ順で処理（深いネストの子ブロックを先に relayout し、
+  // 親 C ブロックの幅計算が正しくなるようにする）
+  const sorted = [...created].sort((a, b) => {
+    return autoLayoutDepth(b.container) - autoLayoutDepth(a.container)
+  })
+  for (const block of sorted) {
     relayoutSlotsAndFitBlock(block)
   }
+}
+
+function autoLayoutDepth(container: { parentAutoLayout?: { parentContainer?: { parentAutoLayout?: unknown } | null } | null }): number {
+  let depth = 0
+  let current = container.parentAutoLayout
+  while (current) {
+    depth++
+    const parent = current.parentContainer
+    current = parent?.parentAutoLayout ?? null
+  }
+  return depth
 }
 
 export function relayoutBlockAndAncestors(

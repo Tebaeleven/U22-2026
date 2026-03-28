@@ -73,3 +73,15 @@ export function operator_join(args: BlockArgs, _util: BlockUtil): string {
 export function operator_length(args: BlockArgs, _util: BlockUtil): number {
   return String(args.STRING ?? "").length
 }
+
+/** _ % _ (余り) */
+export function operator_mod(args: BlockArgs, _util: BlockUtil): number {
+  const num2 = Number(args.NUM2) || 0
+  if (num2 === 0) return 0
+  return (Number(args.NUM1) || 0) % num2
+}
+
+/** 四捨五入 */
+export function operator_round(args: BlockArgs, _util: BlockUtil): number {
+  return Math.round(Number(args.NUM) || 0)
+}

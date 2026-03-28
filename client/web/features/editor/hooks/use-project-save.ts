@@ -36,16 +36,32 @@ export function useProjectSave({
   const [authorId, setAuthorId] = useState<string | null>(null)
   const [isSaving, setIsSaving] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
+  const [isOffline, setIsOffline] = useState(false)
+
+  /** ネットワークエラー判定 */
+  const isNetworkError = useCallback((err: unknown): boolean => {
+    if (err instanceof TypeError && err.message.includes("fetch")) return true
+    const msg = err instanceof Error ? err.message : String(err)
+    return msg.includes("ECONNREFUSED") || msg.includes("NetworkError") || msg.includes("Failed to fetch")
+  }, [])
 
   /** 認証チェック。未認証ならリダイレクト */
   const ensureAuth = useCallback(async () => {
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) {
-      router.push("/signin")
-      return null
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) {
+        router.push("/signin")
+        return null
+      }
+      return user
+    } catch (err) {
+      if (isNetworkError(err)) {
+        setIsOffline(true)
+        return null
+      }
+      throw err
     }
-    return user
-  }, [supabase, router])
+  }, [supabase, router, isNetworkError])
 
   /** プロジェクトを保存 */
   const saveProject = useCallback(async () => {
@@ -87,21 +103,35 @@ export function useProjectSave({
         blocks: getBlockProjectData(),
       }
       await saveProjectData(supabase, user.id, String(currentId), projectData)
+    } catch (err) {
+      if (isNetworkError(err)) {
+        setIsOffline(true)
+        return
+      }
+      throw err
     } finally {
       setIsSaving(false)
     }
-  }, [ensureAuth, getBlockProjectData, projectId, projectName, sprites, supabase])
+  }, [ensureAuth, getBlockProjectData, isNetworkError, projectId, projectName, sprites, supabase])
 
   /** プロジェクトを共有（保存 + shared=true） */
   const shareProject = useCallback(async () => {
-    await saveProject()
-    if (!projectId) return
+    try {
+      await saveProject()
+      if (!projectId) return
 
-    await supabase
-      .from("projects")
-      .update({ shared: true, updated_at: new Date().toISOString() })
-      .eq("id", projectId)
-  }, [saveProject, projectId, supabase])
+      await supabase
+        .from("projects")
+        .update({ shared: true, updated_at: new Date().toISOString() })
+        .eq("id", projectId)
+    } catch (err) {
+      if (isNetworkError(err)) {
+        setIsOffline(true)
+        return
+      }
+      throw err
+    }
+  }, [saveProject, projectId, supabase, isNetworkError])
 
   /** プロジェクトを読み込み */
   const loadProject = useCallback(async (id: string) => {
@@ -129,29 +159,44 @@ export function useProjectSave({
       if (projectData?.blocks) {
         onLoadBlockProjectData(projectData.blocks)
       }
+    } catch (err) {
+      if (isNetworkError(err)) {
+        setIsOffline(true)
+        return
+      }
+      throw err
     } finally {
       setIsLoading(false)
     }
-  }, [onLoadBlockProjectData, setProjectName, setSprites, supabase])
+  }, [onLoadBlockProjectData, setProjectName, setSprites, supabase, isNetworkError])
 
   /** サムネイルを設定 */
   const saveThumbnail = useCallback(async (blob: Blob) => {
-    const user = await ensureAuth()
-    if (!user || !projectId) return
+    try {
+      const user = await ensureAuth()
+      if (!user || !projectId) return
 
-    const url = await uploadThumbnail(supabase, user.id, String(projectId), blob)
+      const url = await uploadThumbnail(supabase, user.id, String(projectId), blob)
 
-    await supabase
-      .from("projects")
-      .update({ thumbnail_url: url, updated_at: new Date().toISOString() })
-      .eq("id", projectId)
-  }, [ensureAuth, projectId, supabase])
+      await supabase
+        .from("projects")
+        .update({ thumbnail_url: url, updated_at: new Date().toISOString() })
+        .eq("id", projectId)
+    } catch (err) {
+      if (isNetworkError(err)) {
+        setIsOffline(true)
+        return
+      }
+      throw err
+    }
+  }, [ensureAuth, projectId, supabase, isNetworkError])
 
   return {
     projectId,
     authorId,
     isSaving,
     isLoading,
+    isOffline,
     saveProject,
     shareProject,
     loadProject,

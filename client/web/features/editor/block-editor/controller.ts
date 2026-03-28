@@ -62,12 +62,14 @@ export type BlockEditorSnapshot = {
   blocks: BlockState[]
   nestedSlots: Record<string, string>
   customProcedures: CustomProcedure[]
+  customVariables: string[]
 }
 
 const EMPTY_SNAPSHOT: BlockEditorSnapshot = {
   blocks: [],
   nestedSlots: {},
   customProcedures: [],
+  customVariables: [],
 }
 
 function cloneProcedure<T>(value: T): T {
@@ -122,6 +124,9 @@ export class BlockEditorController {
         isNest ? container.id : null
       )
     }
+
+    // ネスト変更後にスナップ接続を再構築（body エントリコネクタとの関係を更新）
+    rebuildStackSnapConnections(this.workspace!, this.snapConnections, this.createdMap)
 
     if (!this.syncRenderOrder()) {
       this.bumpRevision()
@@ -249,6 +254,7 @@ export class BlockEditorController {
   loadProjectData(projectData: BlockProjectData): void {
     const normalized: BlockProjectData = {
       customProcedures: (projectData.customProcedures ?? []).map(normalizeProcedure),
+      customVariables: projectData.customVariables ?? [],
       workspace: {
         blocks: projectData.workspace?.blocks ?? [],
       },
@@ -259,6 +265,7 @@ export class BlockEditorController {
       this.snapshot = {
         ...this.snapshot,
         customProcedures: normalized.customProcedures,
+        customVariables: normalized.customVariables ?? [],
       }
       this.emit()
       return
@@ -270,6 +277,7 @@ export class BlockEditorController {
   exportProjectData(): BlockProjectData {
     return {
       customProcedures: this.snapshot.customProcedures.map(cloneProcedure),
+      customVariables: [...this.snapshot.customVariables],
       workspace: this.exportWorkspaceData(),
     }
   }
@@ -383,6 +391,60 @@ export class BlockEditorController {
     }))
   }
 
+  reorderProcedureToken(procedureId: string, fromIndex: number, toIndex: number): void {
+    this.updateProcedure(procedureId, (procedure) => {
+      if (fromIndex < 0 || fromIndex >= procedure.tokens.length) return procedure
+      if (toIndex < 0 || toIndex >= procedure.tokens.length) return procedure
+      const tokens = procedure.tokens.slice()
+      const [token] = tokens.splice(fromIndex, 1)
+      tokens.splice(toIndex, 0, token)
+      return { ...procedure, tokens }
+    })
+  }
+
+  changeProcedureTokenType(
+    procedureId: string,
+    tokenId: string,
+    newType: "label" | "text" | "number"
+  ): void {
+    this.updateProcedure(procedureId, (procedure) => {
+      const tokenIndex = procedure.tokens.findIndex((t) => t.id === tokenId)
+      if (tokenIndex === -1) return procedure
+      const token = procedure.tokens[tokenIndex]
+
+      const currentType = token.type === "label"
+        ? "label"
+        : (procedure.params.find((p) => p.id === token.paramId)?.valueType ?? "text")
+      if (currentType === newType) return procedure
+
+      // 古い param があれば削除
+      let params = [...procedure.params]
+      if (token.type === "param") {
+        params = params.filter((p) => p.id !== token.paramId)
+      }
+
+      let newToken: typeof token
+      if (newType === "label") {
+        const oldText = token.type === "label"
+          ? token.text
+          : (procedure.params.find((p) => p.id === token.paramId)?.name ?? "label")
+        newToken = { id: token.id, type: "label", text: oldText }
+      } else {
+        const param = createDefaultProcedureParam(newType)
+        const oldName = token.type === "label"
+          ? token.text
+          : (procedure.params.find((p) => p.id === token.paramId)?.name ?? param.name)
+        param.name = oldName
+        params = [...params, param]
+        newToken = { id: token.id, type: "param", paramId: param.id }
+      }
+
+      const tokens = procedure.tokens.slice()
+      tokens[tokenIndex] = newToken
+      return { ...procedure, tokens, params }
+    })
+  }
+
   setProcedureReturnsValue(procedureId: string, returnsValue: boolean): void {
     this.updateProcedure(procedureId, (procedure) => ({
       ...procedure,
@@ -406,6 +468,18 @@ export class BlockEditorController {
     relayoutBlockAndAncestors(newId, this.createdMap)
     this.bumpRevision()
     return newId
+  }
+
+  /** 指定した procedure 定義からブロックを作成してワークスペースに追加 */
+  createProcedureFromSpec(procedure: CustomProcedure, x: number, y: number): string | null {
+    const normalized = normalizeProcedure(procedure)
+    const nextProcedures = [...this.snapshot.customProcedures, normalized]
+    this.setCustomProcedures(nextProcedures)
+    const defId = buildProcedureBlockDefs(normalized)[0].id
+    if (!this.workspace) return null
+    const def = getBlockDefById(defId, nextProcedures)
+    if (!def) return null
+    return this.insertBlock(def, x, y)
   }
 
   private createProcedureBlock(x: number, y: number): string | null {
@@ -493,7 +567,7 @@ export class BlockEditorController {
     }
     if (created.cBlockRef) {
       for (const conn of created.cBlockRef.bodyEntryConnectors) {
-        connectorIds.add(conn.id)
+        if (conn) connectorIds.add(conn.id)
       }
       if (created.cBlockRef.bottomConnector) {
         connectorIds.add(created.cBlockRef.bottomConnector.id)
@@ -585,6 +659,10 @@ export class BlockEditorController {
     if (!this.workspace) return
     this.resetWorkspaceState(this.workspace, this.containers)
     this.setCustomProcedures(projectData.customProcedures)
+    this.snapshot = {
+      ...this.snapshot,
+      customVariables: projectData.customVariables ?? [],
+    }
 
     if (projectData.workspace.blocks.length === 0) {
       if (useSampleIfEmpty) {
@@ -950,6 +1028,23 @@ export class BlockEditorController {
     this.containerMap.clear()
     this.cBlockRefMap.clear()
     this.activeBodyProximityIds.clear()
+  }
+
+  addVariable(name: string): void {
+    if (this.snapshot.customVariables.includes(name)) return
+    this.snapshot = {
+      ...this.snapshot,
+      customVariables: [...this.snapshot.customVariables, name],
+    }
+    this.emit()
+  }
+
+  removeVariable(name: string): void {
+    this.snapshot = {
+      ...this.snapshot,
+      customVariables: this.snapshot.customVariables.filter((v) => v !== name),
+    }
+    this.emit()
   }
 
   private setCustomProcedures(customProcedures: CustomProcedure[]): void {

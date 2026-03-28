@@ -239,11 +239,14 @@ export class GameScene extends Phaser.Scene implements GameSceneProxy {
       const px = STAGE_WIDTH / 2 + sprite.x
       const py = STAGE_HEIGHT / 2 - sprite.y
 
-      // 対応する SpriteDef からコスチューム dataUrl を取得
+      // 対応する SpriteDef からコスチューム dataUrl を取得（クローンは親の定義を使う）
       const def = spriteDefs?.find((d) => d.id === sprite.id)
+        ?? (sprite.parentId ? spriteDefs?.find((d) => d.id === sprite.parentId) : undefined)
       const costumeIdx = sprite.costumeIndex
       const costume = def?.costumes[costumeIdx]
-      const texKey = this.textureKey(sprite.id, costumeIdx)
+      // クローンは親のテクスチャを再利用
+      const texOwnerId = sprite.parentId ?? sprite.id
+      const texKey = this.textureKey(texOwnerId, costumeIdx)
       const { scale, width, height } = this.getScaledSize(
         costume?.width,
         costume?.height,
@@ -279,9 +282,35 @@ export class GameScene extends Phaser.Scene implements GameSceneProxy {
         this.rebuildColliders()
       }
 
-      // サイズ・可視性を適用
+      // サイズ・可視性・透明度・反転・色を適用
       imageObj.setScale(scale)
       imageObj.setVisible(sprite.visible)
+      imageObj.setAlpha((sprite.opacity ?? 100) / 100)
+      imageObj.setFlipX(sprite.flipX ?? false)
+      if (sprite.tint != null) {
+        imageObj.setTint(sprite.tint)
+      }
+
+      // 物理プロパティを毎フレーム同期（クローン生成直後にも確実に適用される）
+      const body = imageObj.body as Phaser.Physics.Arcade.Body
+      if (body) {
+        if (sprite.allowGravity !== null && sprite.allowGravity !== undefined) {
+          body.setAllowGravity(sprite.allowGravity)
+        }
+        if (sprite.collideWorldBounds) {
+          body.setCollideWorldBounds(true)
+        }
+        if (sprite.bounce > 0) {
+          body.setBounce(sprite.bounce, sprite.bounce)
+        }
+        // velocity を同期（クローン直後に Phaser オブジェクトがなかった場合のフォールバック）
+        if (currentPhysMode === "dynamic" && (sprite.velocityX !== 0 || sprite.velocityY !== 0)) {
+          const bv = body.velocity
+          if (bv.x === 0 && bv.y === 0) {
+            body.setVelocity(sprite.velocityX, sprite.velocityY)
+          }
+        }
+      }
 
       // dynamic スプライトは Phaser が位置を管理するので VM からの位置更新をスキップ
       if (currentPhysMode !== "dynamic") {
@@ -323,6 +352,7 @@ export class GameScene extends Phaser.Scene implements GameSceneProxy {
         const speech = this.speechMap.get(sprite.id)
         if (speech) speech.setVisible(false)
       }
+
     }
 
     // 削除されたスプライトをクリーンアップ
@@ -405,7 +435,7 @@ export class GameScene extends Phaser.Scene implements GameSceneProxy {
   }
 
   /**
-   * 2つのスプライトが接触しているか判定
+   * 2つのスプライトが接触しているか判定（ボディの AABB 交差で直接判定）
    */
   checkOverlap(spriteIdA: string, spriteIdB: string): boolean {
     const a = this.spriteMap.get(spriteIdA)
@@ -414,7 +444,11 @@ export class GameScene extends Phaser.Scene implements GameSceneProxy {
     const bodyA = a.body as Phaser.Physics.Arcade.Body
     const bodyB = b.body as Phaser.Physics.Arcade.Body
     if (!bodyA || !bodyB) return false
-    return this.physics.overlap(a, b)
+    if (!bodyA.enable || !bodyB.enable) return false
+    return Phaser.Geom.Intersects.RectangleToRectangle(
+      new Phaser.Geom.Rectangle(bodyA.x, bodyA.y, bodyA.width, bodyA.height),
+      new Phaser.Geom.Rectangle(bodyB.x, bodyB.y, bodyB.width, bodyB.height),
+    )
   }
 
   // ─── GameSceneProxy 実装 ─────────────────────────────
@@ -486,6 +520,177 @@ export class GameScene extends Phaser.Scene implements GameSceneProxy {
     this.physics.world.setBounds(0, 0, width, height)
   }
 
+  /** スプライトのバウンス(反発係数)を設定 */
+  setSpriteBounce(id: string, bounceX: number, bounceY: number) {
+    const img = this.spriteMap.get(id)
+    if (!img) return
+    const body = img.body as Phaser.Physics.Arcade.Body
+    if (!body) return
+    body.setBounce(bounceX, bounceY)
+  }
+
+  /** スプライトのワールド境界衝突を設定 */
+  setSpriteCollideWorldBounds(id: string, enabled: boolean) {
+    const img = this.spriteMap.get(id)
+    if (!img) return
+    const body = img.body as Phaser.Physics.Arcade.Body
+    if (!body) return
+    body.setCollideWorldBounds(enabled)
+  }
+
+  /** スプライトの物理ボディの有効/無効を切り替え */
+  setSpriteBodyEnabled(id: string, enabled: boolean) {
+    const img = this.spriteMap.get(id)
+    if (!img) return
+    const body = img.body as Phaser.Physics.Arcade.Body
+    if (!body) return
+    body.enable = enabled
+    img.setVisible(enabled)
+  }
+
+  /** 衝突コールバックを登録 */
+  registerCollisionCallback(idA: string, idB: string, callback: () => void) {
+    const a = this.spriteMap.get(idA)
+    const b = this.spriteMap.get(idB)
+    if (!a || !b) return
+    const collider = this.physics.add.overlap(a, b, () => callback())
+    this.activeColliders.push(collider)
+  }
+
+  /** スプライトの位置を直接設定（物理ボディも含む） */
+  setSpritePosition(id: string, x: number, y: number) {
+    const img = this.spriteMap.get(id)
+    if (!img) return
+    const px = STAGE_WIDTH / 2 + x
+    const py = STAGE_HEIGHT / 2 - y
+    img.setPosition(px, py)
+    const body = img.body as Phaser.Physics.Arcade.Body
+    if (body) {
+      body.reset(px, py)
+    }
+  }
+
+  /** 個別の重力有効/無効 */
+  setSpriteAllowGravity(id: string, enabled: boolean) {
+    const img = this.spriteMap.get(id)
+    if (!img) return
+    const body = img.body as Phaser.Physics.Arcade.Body
+    if (!body) return
+    body.setAllowGravity(enabled)
+  }
+
+  /** 色かぶせ */
+  setSpriteTint(id: string, color: number) {
+    const img = this.spriteMap.get(id)
+    if (img) img.setTint(color)
+  }
+
+  /** 色かぶせ解除 */
+  clearSpriteTint(id: string) {
+    const img = this.spriteMap.get(id)
+    if (img) img.clearTint()
+  }
+
+  /** 透明度 (0〜1) */
+  setSpriteOpacity(id: string, alpha: number) {
+    const img = this.spriteMap.get(id)
+    if (img) img.setAlpha(alpha)
+  }
+
+  /** 左右反転 */
+  setSpriteFlipX(id: string, flip: boolean) {
+    const img = this.spriteMap.get(id)
+    if (img) img.setFlipX(flip)
+  }
+
+  // ─── スプライトごとの Graphics レイヤー ──────────────
+  private graphicsMap = new Map<string, Phaser.GameObjects.Graphics>()
+
+  private getOrCreateGraphics(spriteId: string): Phaser.GameObjects.Graphics {
+    let g = this.graphicsMap.get(spriteId)
+    if (!g) {
+      g = this.add.graphics()
+      this.graphicsMap.set(spriteId, g)
+    }
+    return g
+  }
+
+  /** 矩形を描画（ステージ座標系） */
+  graphicsFillRect(spriteId: string, stageX: number, stageY: number, w: number, h: number, color: number) {
+    const g = this.getOrCreateGraphics(spriteId)
+    const px = STAGE_WIDTH / 2 + stageX
+    const py = STAGE_HEIGHT / 2 - stageY
+    g.fillStyle(color)
+    g.fillRect(px, py, w, h)
+  }
+
+  /** Graphics レイヤーをクリア */
+  graphicsClear(spriteId: string) {
+    const g = this.graphicsMap.get(spriteId)
+    if (g) g.clear()
+  }
+
+  /** 浮遊テキスト表示 */
+  showFloatingText(text: string, stageX: number, stageY: number) {
+    const px = STAGE_WIDTH / 2 + stageX
+    const py = STAGE_HEIGHT / 2 - stageY
+    const t = this.add.text(px, py, text, {
+      fontFamily: "monospace",
+      fontSize: "48px",
+      color: "#ffcc00",
+      stroke: "#000000",
+      strokeThickness: 3,
+    }).setOrigin(0.5)
+
+    this.tweens.add({
+      targets: t,
+      y: py - 80,
+      alpha: 0,
+      duration: 1000,
+      onComplete: () => t.destroy(),
+    })
+  }
+
+  /** Tween でスプライトを移動 */
+  tweenSprite(id: string, stageX: number, stageY: number, duration: number): Promise<void> {
+    const img = this.spriteMap.get(id)
+    if (!img) return Promise.resolve()
+
+    const px = STAGE_WIDTH / 2 + stageX
+    const py = STAGE_HEIGHT / 2 - stageY
+
+    return new Promise((resolve) => {
+      this.tweens.add({
+        targets: img,
+        x: px,
+        y: py,
+        duration,
+        ease: "Sine.easeInOut",
+        onComplete: () => resolve(),
+      })
+    })
+  }
+
+  /** スプライトを削除（クローン用） */
+  removeSprite(id: string) {
+    const img = this.spriteMap.get(id)
+    if (img) {
+      img.destroy()
+      this.spriteMap.delete(id)
+    }
+    const speech = this.speechMap.get(id)
+    if (speech) {
+      speech.destroy()
+      this.speechMap.delete(id)
+    }
+    const gfx = this.graphicsMap.get(id)
+    if (gfx) { gfx.destroy(); this.graphicsMap.delete(id) }
+    this.colliderMap.delete(id)
+    this.currentTextureMap.delete(id)
+    this.physicsModeMap.delete(id)
+    this.rebuildColliders()
+  }
+
   /**
    * スプライトの位置をステージ座標で直接更新（テクスチャ操作なし）
    * ドラッグ中のリアルタイム更新用
@@ -507,7 +712,7 @@ export class GameScene extends Phaser.Scene implements GameSceneProxy {
       case "dynamic":
         body.setImmovable(false)
         body.setAllowGravity(true)
-        body.setCollideWorldBounds(true)
+        // collideWorldBounds は physics_setcollideworldbounds ブロックで制御
         break
       case "static":
         body.setImmovable(true)

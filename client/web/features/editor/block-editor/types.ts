@@ -167,7 +167,7 @@ export type BlockState = {
 export type CBlockRef = {
   container: Container
   bodyLayouts: AutoLayout[]
-  bodyEntryConnectors: Connector[]
+  bodyEntryConnectors: Array<Connector | null>
   bottomConnector: Connector | null
 }
 
@@ -221,6 +221,7 @@ export type BlockWorkspaceData = {
 
 export type BlockProjectData = {
   customProcedures: CustomProcedure[]
+  customVariables?: string[]
   workspace: BlockWorkspaceData
 }
 
@@ -230,11 +231,12 @@ export type SlotZoneMeta = {
 }
 
 export type BodyZoneMeta = {
-  bodyEntryConnector: Connector | undefined
+  bodyEntryConnector: Connector | null | undefined
 }
 
 export type BodyLayoutHit = {
   insertIndex: number
+  sourceConnector: Connector
   targetConnector: Connector
   draggedBlock: CreatedBlock
 }
@@ -248,6 +250,18 @@ export type ShapeConfig = {
   size: { w: number; h: number }
   connectors: { top: boolean; bottom: boolean; value?: boolean }
   bodies?: { minHeight: number }[]
+}
+
+export type BlockBodyBehavior = {
+  minHeight: number
+  hasEntryConnector: boolean
+}
+
+export type BlockBehavior = {
+  size: { w: number; h: number }
+  connectors: { top: boolean; bottom: boolean; value: boolean }
+  bodies: BlockBodyBehavior[]
+  contentGap?: number
 }
 
 export type ProximityHit = {

@@ -8,6 +8,7 @@ import * as operatorsPrimitives from "./primitives/operators"
 import * as variablesPrimitives from "./primitives/variables"
 import * as observerPrimitives from "./primitives/observer"
 import * as physicsPrimitives from "./primitives/physics"
+import * as clonePrimitives from "./primitives/clone"
 
 const registry = new Map<string, BlockFunction>()
 
@@ -26,6 +27,7 @@ registerAll(operatorsPrimitives)
 registerAll(variablesPrimitives)
 registerAll(observerPrimitives)
 registerAll(physicsPrimitives)
+registerAll(clonePrimitives)
 
 export function getBlockFunction(opcode: string): BlockFunction | undefined {
   return registry.get(opcode)

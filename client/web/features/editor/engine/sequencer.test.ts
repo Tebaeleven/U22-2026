@@ -37,6 +37,13 @@ function createSequencer(
     physicsMode: "none",
     velocityX: 0,
     velocityY: 0,
+    bodyEnabled: true,
+    bounce: 0,
+    collideWorldBounds: false,
+    allowGravity: null,
+    opacity: 100,
+    tint: null,
+    flipX: false,
   }
 
   const callbacks: SequencerCallbacks = {
@@ -54,6 +61,10 @@ function createSequencer(
     cacheReporterPreview: (blockId, spriteId, value) => {
       previewCache.set(`${spriteId}:${blockId}`, value)
     },
+    createClone: () => undefined,
+    deleteClone: () => undefined,
+    registerCollisionCallback: () => undefined,
+    restartGame: () => undefined,
   }
 
   return new Sequencer(callbacks)

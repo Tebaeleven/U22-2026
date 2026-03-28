@@ -13,4 +13,9 @@ export function event_whenkeypressed(_args: BlockArgs, _util: BlockUtil) {
   // Hat ブロック — Runtime が直接スレッドを生成する
 }
 
+/** _に触れられたとき */
+export function event_whentouched(_args: BlockArgs, _util: BlockUtil) {
+  // Hat ブロック — Runtime が毎 tick で衝突チェックし、スレッドを生成する
+}
+
 // Broadcast は Observer の Send event / When event で代替

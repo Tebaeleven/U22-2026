@@ -121,3 +121,13 @@ export function control_wait_until(args: BlockArgs, util: BlockUtil) {
     util.yield()
   }
 }
+
+/** すべてを止める */
+export function control_stop(_args: BlockArgs, _util: BlockUtil) {
+  // Runtime が stop() を呼ぶ
+}
+
+/** ゲームをリスタート */
+export function control_restart(_args: BlockArgs, util: BlockUtil) {
+  util.restartGame()
+}

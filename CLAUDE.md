@@ -89,8 +89,21 @@ libs/headless-vpl/   → VPL ライブラリ（Git サブモジュール、Bun +
 
 `client/web/scripts/prepare-headless-vpl.mjs` が `libs/headless-vpl/dist` を `node_modules/headless-vpl` にコピーする。`bun run dev` / `bun run build` 実行時に自動で走る。
 
+## ユビキタス言語
+
+ブロックエディタの用語定義は @docs/ubiquitous-language.md を参照。
+ユーザーが「レポーターブロック」「ディファインブロック」「引数ブロック」等の用語を使った場合、このドキュメントに基づいて解釈すること。
+
 ## 重要な注意事項
 
 - **Next.js 16.2.1** はトレーニングデータと異なる破壊的変更がある。コードを書く前に `node_modules/next/dist/docs/` のガイドを確認すること
 - サーバー側の TypeScript は `experimentalDecorators: true`（Colyseus Schema 用）
 - headless-vpl は Git サブモジュール。変更時は本体リポジトリとの整合性に注意
+- 全て日本語で返答すること
+
+### headless-vpl に関する制約
+
+- **headless-vpl（`libs/headless-vpl/`）のコードは絶対に変更しないこと**
+- headless-vpl は If ブロック（`c-block`）のネスティングが正しく動作している実績がある
+- Forever ブロック（`cap-c`）のネスティングが動作しない場合、原因は headless-vpl ではなく `client/web/features/editor/` 側の実装にある
+- 修正は常に `client/web/` 以下のコードで行うこと

@@ -36,6 +36,6 @@ export async function proxy(request: NextRequest) {
 export const config = {
   matcher: [
     // 静的ファイル・画像・favicon を除外
-    "/((?!_next/static|_next/image|favicon.ico|images/).*)",
+    "/((?!_next/static|_next/image|favicon.ico|images/|editor).*)",
   ],
 }

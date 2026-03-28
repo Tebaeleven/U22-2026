@@ -26,3 +26,44 @@ export function data_showvariable(_args: BlockArgs, _util: BlockUtil) {
 export function data_hidevariable(_args: BlockArgs, _util: BlockUtil) {
   // TODO: 変数モニター非表示
 }
+
+// ─── リスト操作 ────────────────────────────────────
+
+function getList(util: BlockUtil, name: string): unknown[] {
+  const list = util.getVariable(name)
+  if (Array.isArray(list)) return list
+  const newList: unknown[] = []
+  util.setVariable(name, newList)
+  return newList
+}
+
+/** リストに追加 */
+export function data_addtolist(args: BlockArgs, util: BlockUtil) {
+  const list = getList(util, String(args.LIST))
+  list.push(args.ITEM ?? "")
+  util.setVariable(String(args.LIST), [...list])
+}
+
+/** リストの_番目を削除 */
+export function data_deleteoflist(args: BlockArgs, util: BlockUtil) {
+  const list = getList(util, String(args.LIST))
+  const index = Number(args.INDEX) - 1
+  if (index >= 0 && index < list.length) {
+    list.splice(index, 1)
+    util.setVariable(String(args.LIST), [...list])
+  }
+}
+
+/** リストの_番目 */
+export function data_itemoflist(args: BlockArgs, util: BlockUtil): unknown {
+  const list = getList(util, String(args.LIST))
+  const index = Number(args.INDEX) - 1
+  if (index >= 0 && index < list.length) return list[index]
+  return ""
+}
+
+/** リストの長さ */
+export function data_lengthoflist(args: BlockArgs, util: BlockUtil): number {
+  const list = getList(util, String(args.LIST))
+  return list.length
+}

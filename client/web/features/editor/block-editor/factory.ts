@@ -7,14 +7,13 @@ import {
   C_BODY_ENTRY_OFFSET_X,
   C_BODY_ENTRY_OFFSET_Y,
   C_BODY_LAYOUT_OFFSET_X,
-  C_DIVIDER_H,
   C_FOOTER_H,
   C_HEADER_H,
   C_W,
   CONN_OFFSET_X,
-  SHAPE_CONFIGS,
   computeSlotPositions,
   createInitialInputValues,
+  resolveBlockBehavior,
 } from "./blocks"
 
 export function createBlock(
@@ -23,9 +22,9 @@ export function createBlock(
   x: number,
   y: number
 ): CreatedBlock {
-  const shape = SHAPE_CONFIGS[def.shape]
-  const { w, h } = shape.size
-  const isCBlock = !!shape.bodies
+  const behavior = resolveBlockBehavior(def)
+  const { w, h } = behavior.size
+  const isCBlock = behavior.bodies.length > 0
   const state = {
     id: "",
     def,
@@ -33,7 +32,7 @@ export function createBlock(
   }
 
   // --- Connectors ---
-  const topConn = shape.connectors.top
+  const topConn = behavior.connectors.top
     ? new Connector({
         position: [CONN_OFFSET_X, 0],
         name: "top",
@@ -41,7 +40,7 @@ export function createBlock(
       })
     : null
 
-  const bottomConn = shape.connectors.bottom
+  const bottomConn = behavior.connectors.bottom
     ? new Connector({
         name: "bottom",
         type: "output",
@@ -53,7 +52,7 @@ export function createBlock(
       })
     : null
 
-  const valueConnector = shape.connectors.value
+  const valueConnector = behavior.connectors.value
     ? new Connector({
         name: "value",
         type: "output",
@@ -69,12 +68,13 @@ export function createBlock(
 
   // --- Body layouts（C-block系のみ） ---
   const bodyLayouts: AutoLayout[] = []
-  const bodyEntryConnectors: Connector[] = []
-  if (shape.bodies) {
+  const bodyEntryConnectors: Array<Connector | null> = []
+  if (behavior.bodies.length > 0) {
     let bodyY = C_HEADER_H
-    for (let i = 0; i < shape.bodies.length; i += 1) {
+    for (let i = 0; i < behavior.bodies.length; i += 1) {
       const bodyKey = `body${i + 1}`
       const entryKey = `bodyEntry${i + 1}`
+      const body = behavior.bodies[i]
 
       const layout = new AutoLayout({
         position: [C_BODY_LAYOUT_OFFSET_X, bodyY],
@@ -82,25 +82,29 @@ export function createBlock(
         gap: 0,
         alignment: "start",
         minWidth: C_W - 32,
-        minHeight: shape.bodies[i].minHeight,
+        minHeight: body.minHeight,
       })
       children[bodyKey] = layout
       bodyLayouts.push(layout)
 
-      const entry = new Connector({
-        name: `body-entry-${i + 1}`,
-        type: "input",
-        hitRadius: C_BODY_ENTRY_HIT_RADIUS,
-        anchor: {
-          target: bodyKey,
-          origin: "top-left",
-          offset: [C_BODY_ENTRY_OFFSET_X, C_BODY_ENTRY_OFFSET_Y],
-        },
-      })
-      children[entryKey] = entry
+      const entry = body.hasEntryConnector
+        ? new Connector({
+            name: `body-entry-${i + 1}`,
+            type: "input",
+            hitRadius: C_BODY_ENTRY_HIT_RADIUS,
+            anchor: {
+              target: bodyKey,
+              origin: "top-left",
+              offset: [C_BODY_ENTRY_OFFSET_X, C_BODY_ENTRY_OFFSET_Y],
+            },
+          })
+        : null
+      if (entry) {
+        children[entryKey] = entry
+      }
       bodyEntryConnectors.push(entry)
 
-      bodyY += shape.bodies[i].minHeight + C_DIVIDER_H
+      bodyY += body.minHeight + (behavior.contentGap ?? 0)
     }
   }
 
@@ -156,7 +160,7 @@ export function createBlock(
       : undefined,
     minWidth: w,
     minHeight: h,
-    contentGap: def.shape === "c-block-else" ? C_DIVIDER_H : undefined,
+    contentGap: behavior.contentGap,
     children,
   })
   state.id = container.id

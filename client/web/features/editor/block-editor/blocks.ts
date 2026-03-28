@@ -1,5 +1,6 @@
 // ブロック定義・寸法定数・ヘルパー関数
 import type {
+  BlockBehavior,
   BlockDef,
   BlockProjectData,
   BlockShape,
@@ -40,6 +41,7 @@ export const INLINE_REPORTER_INPUT_MIN_W = 28
 export const INLINE_REPORTER_INPUT_MAX_W = 84
 
 export const STARTER_DEFINE_BLOCK_ID = "starter-define"
+export const DEFAULT_VARIABLES = ["my variable", "score", "timer"]
 export const GENERIC_RETURN_BLOCK_ID = "custom-return"
 export const CUSTOM_DEFINE_PREFIX = "custom-define:"
 export const CUSTOM_CALL_PREFIX = "custom-call:"
@@ -77,25 +79,61 @@ export const SHAPE_CONFIGS: Record<BlockShape, ShapeConfig> = {
   },
 }
 
+type BlockBehaviorOverride = {
+  connectors?: Partial<BlockBehavior["connectors"]>
+  bodies?: Array<Partial<BlockBehavior["bodies"][number]>>
+  contentGap?: number
+}
+
+const BLOCK_BEHAVIOR_OVERRIDES: Partial<
+  Record<string, BlockBehaviorOverride>
+> = {}
+
+export function resolveBlockBehavior(blockOrShape: BlockDef | BlockShape): BlockBehavior {
+  const def = typeof blockOrShape === "string" ? null : blockOrShape
+  const shape = typeof blockOrShape === "string" ? blockOrShape : blockOrShape.shape
+  const shapeConfig = SHAPE_CONFIGS[shape]
+  const override = def?.opcode
+    ? BLOCK_BEHAVIOR_OVERRIDES[def.opcode]
+    : undefined
+
+  return {
+    size: shapeConfig.size,
+    connectors: {
+      top: override?.connectors?.top ?? shapeConfig.connectors.top,
+      bottom: override?.connectors?.bottom ?? shapeConfig.connectors.bottom,
+      value: override?.connectors?.value ?? !!shapeConfig.connectors.value,
+    },
+    bodies: (shapeConfig.bodies ?? []).map((body, index) => ({
+      minHeight: override?.bodies?.[index]?.minHeight ?? body.minHeight,
+      hasEntryConnector:
+        override?.bodies?.[index]?.hasEntryConnector ?? true,
+    })),
+    contentGap:
+      override?.contentGap ??
+      (shape === "c-block-else" ? C_DIVIDER_H : undefined),
+  }
+}
+
 // --- 共通ヘルパー ---
 export function getBlockSize(shape: BlockShape): { w: number; h: number } {
-  return SHAPE_CONFIGS[shape].size
+  return resolveBlockBehavior(shape).size
 }
 
 export function hasTopConnector(shape: BlockShape): boolean {
-  return SHAPE_CONFIGS[shape].connectors.top
+  return resolveBlockBehavior(shape).connectors.top
 }
 
 export function hasBottomConnector(shape: BlockShape): boolean {
-  return SHAPE_CONFIGS[shape].connectors.bottom
+  return resolveBlockBehavior(shape).connectors.bottom
 }
 
 export function isCBlockShape(shape: BlockShape): boolean {
-  return !!SHAPE_CONFIGS[shape].bodies
+  return resolveBlockBehavior(shape).bodies.length > 0
 }
 
 export function isInlineValueShape(shape: BlockShape): boolean {
-  return !!SHAPE_CONFIGS[shape].connectors.value
+  return resolveBlockBehavior(shape).connectors.value
 }
 
 export function isValueBlockShape(shape: BlockShape): shape is ValueBlockShape {
@@ -129,7 +167,7 @@ function createBuiltinBlockDefs() {
   const V = ["my variable", "score", "timer"]
   const L = ["my list", "inventory", "path"]
   const K = ["space", "up arrow", "down arrow", "right arrow", "left arrow", "any"]
-  const EVT = ["message1", "game-over", "reset"]
+  const EVT = ["message1", "game-over", "reset", "coin-hit", "collision"]
 
   const defs: Omit<BlockDef, "id" | "source">[] = [
     { category: "events", name: "When 🏴 clicked", opcode: "event_whenflagclicked", shape: "hat", color: "#FFBF00", inputs: [] },
@@ -220,7 +258,7 @@ function createBuiltinBlockDefs() {
       inputs: [{ type: "variable-name", default: "i", editable: false, minWidth: 28, maxWidth: 96 }],
     },
 
-    { category: "sensing", name: "Touching", opcode: "sensing_touchingobject", shape: "boolean", color: "#5CB1D6", inputs: [{ type: "dropdown", default: "mouse-pointer", options: ["mouse-pointer", "edge", "Sprite1"] }] },
+    { category: "sensing", name: "Touching", opcode: "sensing_touchingobject", shape: "boolean", color: "#5CB1D6", inputs: [{ type: "dropdown", default: "mouse-pointer", options: ["mouse-pointer", "edge", "プレイヤー", "地面", "浮島", "コイン", "敵"] }] },
     { category: "sensing", name: "Key", opcode: "sensing_keypressed", shape: "boolean", color: "#5CB1D6", inputs: [{ type: "dropdown", default: "space", options: K }, { type: "label", text: "pressed?" }] },
     { category: "sensing", name: "Mouse X", opcode: "sensing_mousex", shape: "reporter", color: "#5CB1D6", inputs: [] },
     { category: "sensing", name: "Mouse Y", opcode: "sensing_mousey", shape: "reporter", color: "#5CB1D6", inputs: [] },
@@ -261,6 +299,7 @@ function createBuiltinBlockDefs() {
       shape: "hat",
       color: "#FF6680",
       inputs: [],
+      paletteHidden: true,
     },
     {
       category: "myblocks",
@@ -271,6 +310,21 @@ function createBuiltinBlockDefs() {
       inputs: [{ type: "text", default: "", placeholder: "value" }],
     },
 
+    // --- クローン ---
+    { category: "control", name: "Create clone of", opcode: "clone_create", shape: "stack", color: "#FFAB19", inputs: [{ type: "dropdown", default: "myself", options: ["myself", "プレイヤー", "地面", "浮島", "コイン", "敵", "弾"] }] },
+    { category: "control", name: "When I start as a clone", opcode: "clone_whencloned", shape: "hat", color: "#FFAB19", inputs: [] },
+    { category: "control", name: "Delete this clone", opcode: "clone_delete", shape: "stack", color: "#FFAB19", inputs: [] },
+
+    // --- コスチューム拡張 ---
+    { category: "looks", name: "Next costume", opcode: "looks_nextcostume", shape: "stack", color: "#9966FF", inputs: [] },
+    { category: "looks", name: "Costume #", opcode: "looks_costumenumber", shape: "reporter", color: "#9966FF", inputs: [] },
+
+    // --- HUD テキスト ---
+    { category: "looks", name: "Show text", opcode: "looks_addtext", shape: "stack", color: "#9966FF", inputs: [{ type: "text", default: "Score: 0" }, { type: "label", text: "at x:" }, { type: "number", default: -900 }, { type: "label", text: "y:" }, { type: "number", default: 500 }] },
+    { category: "looks", name: "Update text to", opcode: "looks_updatetext", shape: "stack", color: "#9966FF", inputs: [{ type: "text", default: "Score: 10" }] },
+    { category: "looks", name: "Remove text", opcode: "looks_removetext", shape: "stack", color: "#9966FF", inputs: [] },
+
+    // --- 物理 ---
     { category: "physics", name: "Set physics", opcode: "physics_setmode", shape: "stack", color: "#FF4D6A", inputs: [{ type: "dropdown", default: "dynamic", options: ["dynamic", "static", "none"] }] },
     { category: "physics", name: "Set gravity to", opcode: "physics_setgravity", shape: "stack", color: "#FF4D6A", inputs: [{ type: "number", default: 500 }] },
     { category: "physics", name: "Set velocity x:", opcode: "physics_setvelocity", shape: "stack", color: "#FF4D6A", inputs: [{ type: "number", default: 0 }, { type: "label", text: "y:" }, { type: "number", default: 0 }] },
@@ -279,6 +333,35 @@ function createBuiltinBlockDefs() {
     { category: "physics", name: "Velocity x", opcode: "physics_velocityX", shape: "reporter", color: "#FF4D6A", inputs: [] },
     { category: "physics", name: "Velocity y", opcode: "physics_velocityY", shape: "reporter", color: "#FF4D6A", inputs: [] },
     { category: "physics", name: "On ground?", opcode: "physics_onground", shape: "boolean", color: "#FF4D6A", inputs: [] },
+    { category: "physics", name: "Set bounce to", opcode: "physics_setbounce", shape: "stack", color: "#FF4D6A", inputs: [{ type: "number", default: 0 }] },
+    { category: "physics", name: "Set collide world bounds", opcode: "physics_setcollideworldbounds", shape: "stack", color: "#FF4D6A", inputs: [{ type: "dropdown", default: "on", options: ["on", "off"] }] },
+    { category: "physics", name: "Disable body", opcode: "physics_disablebody", shape: "stack", color: "#FF4D6A", inputs: [] },
+    { category: "physics", name: "Enable body", opcode: "physics_enablebody", shape: "stack", color: "#FF4D6A", inputs: [] },
+
+    // --- 衝突イベント（コールバック型） ---
+    { category: "physics", name: "On collide with", opcode: "physics_oncollide", shape: "stack", color: "#FF4D6A", inputs: [{ type: "dropdown", default: "プレイヤー", options: ["any", "プレイヤー", "地面", "浮島", "コイン", "敵"] }, { type: "label", text: "send" }, { type: "dropdown", default: "collision", options: EVT }] },
+    { category: "physics", name: "Collision target", opcode: "physics_collisiontarget", shape: "reporter", color: "#FF4D6A", inputs: [] },
+    { category: "physics", name: "Set allow gravity", opcode: "physics_setallowgravity", shape: "stack", color: "#FF4D6A", inputs: [{ type: "dropdown", default: "on", options: ["on", "off"] }] },
+
+    // --- 見た目拡張 ---
+    { category: "looks", name: "Set tint to", opcode: "looks_settint", shape: "stack", color: "#9966FF", inputs: [{ type: "text", default: "#ff0000" }] },
+    { category: "looks", name: "Clear tint", opcode: "looks_cleartint", shape: "stack", color: "#9966FF", inputs: [] },
+    { category: "looks", name: "Set opacity to", opcode: "looks_setopacity", shape: "stack", color: "#9966FF", inputs: [{ type: "number", default: 100 }, { type: "label", text: "%" }] },
+    { category: "looks", name: "Set flip x", opcode: "looks_setflipx", shape: "stack", color: "#9966FF", inputs: [{ type: "dropdown", default: "on", options: ["on", "off"] }] },
+    { category: "looks", name: "Floating text", opcode: "looks_floatingtext", shape: "stack", color: "#9966FF", inputs: [{ type: "text", default: "+10" }] },
+
+    // --- グラフィックス描画（Phaser Graphics API 相当） ---
+    { category: "looks", name: "Fill rect x:", opcode: "graphics_fillrect", shape: "stack", color: "#9966FF", inputs: [{ type: "number", default: 0 }, { type: "label", text: "y:" }, { type: "number", default: 0 }, { type: "label", text: "w:" }, { type: "number", default: 100 }, { type: "label", text: "h:" }, { type: "number", default: 20 }, { type: "label", text: "color:" }, { type: "text", default: "#00ff00" }] },
+    { category: "looks", name: "Clear graphics", opcode: "graphics_clear", shape: "stack", color: "#9966FF", inputs: [] },
+
+    // --- 衝突イベント（ハット） ---
+    { category: "events", name: "When touched by", opcode: "event_whentouched", shape: "hat", color: "#FFBF00", inputs: [{ type: "dropdown", default: "コイン", options: ["any", "プレイヤー", "地面", "浮島", "コイン", "敵", "弾"] }] },
+
+    // --- 制御拡張 ---
+    { category: "control", name: "Restart game", opcode: "control_restart", shape: "stack", color: "#FFAB19", inputs: [] },
+
+    // --- モーション拡張 ---
+    { category: "motion", name: "Tween to x:", opcode: "motion_tweento", shape: "stack", color: "#4C97FF", inputs: [{ type: "number", default: 0 }, { type: "label", text: "y:" }, { type: "number", default: 0 }, { type: "label", text: "in" }, { type: "number", default: 1 }, { type: "label", text: "secs" }] },
   ]
 
   return defs.map((def, index) => {
@@ -679,8 +762,8 @@ export function computeSlotPositions(
     INLINE_PADDING_X +
     estimateTextWidth(def.name) +
     (def.name ? INLINE_GAP : 0)
-  const shapeConfig = SHAPE_CONFIGS[def.shape]
-  const blockH = isCBlockShape(def.shape) ? C_HEADER_H : shapeConfig.size.h
+  const behavior = resolveBlockBehavior(def)
+  const blockH = behavior.bodies.length > 0 ? C_HEADER_H : behavior.size.h
   const slotY = (blockH - INLINE_SLOT_BASE_H) / 2
   const slots: SlotInfo[] = []
 

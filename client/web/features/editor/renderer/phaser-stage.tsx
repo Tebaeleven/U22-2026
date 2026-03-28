@@ -291,15 +291,17 @@ export const PhaserStage = forwardRef<PhaserStageHandle, PhaserStageProps>(
         if (!gizmoSpriteId) return
         sceneRef.current?.moveSpritePosition(gizmoSpriteId, x, y)
         setDragPos({ x, y })
+        // ドラッグ中もリアルタイムで Redux を更新（インスペクター等に即反映）
+        onSpritePositionChange?.(gizmoSpriteId, x, y)
       },
-      [gizmoSpriteId]
+      [gizmoSpriteId, onSpritePositionChange]
     )
 
     const handleSpriteMoveEnd = useCallback(
       (x: number, y: number) => {
-        if (!gizmoSpriteId || !onSpritePositionChange) return
+        if (!gizmoSpriteId) return
         setDragPos(null)
-        onSpritePositionChange(gizmoSpriteId, x, y)
+        onSpritePositionChange?.(gizmoSpriteId, x, y)
       },
       [gizmoSpriteId, onSpritePositionChange]
     )

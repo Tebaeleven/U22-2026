@@ -23,7 +23,7 @@ import {
 import type Konva from "konva"
 import {
   MousePointer2,
-  Paintbrush,
+  Pen,
   Minus as LineIcon,
   Square,
   Circle,
@@ -171,7 +171,7 @@ const CURSOR_STYLE: Record<Tool, string> = {
 
 const TOOL_DEFS: { id: Tool; icon: React.ReactNode; label: string }[] = [
   { id: "select", icon: <MousePointer2 size={16} />, label: "選択" },
-  { id: "brush", icon: <Paintbrush size={16} />, label: "ブラシ" },
+  { id: "brush", icon: <Pen size={16} />, label: "ペン" },
   { id: "line", icon: <LineIcon size={16} />, label: "直線" },
   { id: "rect", icon: <Square size={16} />, label: "矩形" },
   { id: "ellipse", icon: <Circle size={16} />, label: "楕円" },
@@ -438,14 +438,14 @@ function getElementBounds(element: DrawElement) {
 
 function getElementNodeProps(element: DrawElement) {
   const bounds = getElementBounds(element)
-  const pivotX = bounds.x + bounds.width / 2
-  const pivotY = bounds.y + bounds.height / 2
-
+  // Group の origin を bounds 左上に設定し、子要素はゼロ基準で描画する
   return {
-    x: pivotX + element.transform.x,
-    y: pivotY + element.transform.y,
-    offsetX: pivotX,
-    offsetY: pivotY,
+    x: bounds.x + element.transform.x,
+    y: bounds.y + element.transform.y,
+    offsetX: 0,
+    offsetY: 0,
+    width: bounds.width,
+    height: bounds.height,
     scaleX: element.transform.scaleX,
     scaleY: element.transform.scaleY,
     rotation: element.transform.rotation,
@@ -453,11 +453,12 @@ function getElementNodeProps(element: DrawElement) {
 }
 
 function applyNodeTransform(element: DrawElement, node: Konva.Node): DrawElement {
+  const bounds = getElementBounds(element)
   return {
     ...element,
     transform: {
-      x: node.x() - node.offsetX(),
-      y: node.y() - node.offsetY(),
+      x: node.x() - bounds.x,
+      y: node.y() - bounds.y,
       scaleX: node.scaleX(),
       scaleY: node.scaleY(),
       rotation: node.rotation(),
@@ -493,6 +494,7 @@ export function DrawingCanvas({
   const elementNodeRefs = useRef(new Map<number, Konva.Node>())
   const initialElementLoadedRef = useRef(false)
   const suppressNextContentVersionRef = useRef(false)
+  const clipboardRef = useRef<DrawElement | null>(null)
   const pristineInitialLayoutRef = useRef(false)
   const hasMountedElementsRef = useRef(false)
   const lastQueuedAutoSaveVersionRef = useRef(0)
@@ -507,7 +509,18 @@ export function DrawingCanvas({
 
   // 要素管理
   const [elements, setElements] = useState<DrawElement[]>([])
-  const [redoStack, setRedoStack] = useState<DrawElement[]>([])
+  // Undo/Redo: elements 配列全体のスナップショットを保持
+  const [undoStack, setUndoStack] = useState<DrawElement[][]>([])
+  const [redoStack, setRedoStack] = useState<DrawElement[][]>([])
+
+  /** 変更操作の前に呼ぶ: 現在の elements を undoStack に保存し、redoStack をクリア */
+  const pushUndo = useCallback(() => {
+    setElements((current) => {
+      setUndoStack((stack) => [...stack, current])
+      setRedoStack([])
+      return current
+    })
+  }, [])
 
   // 描画中の状態
   const isDrawing = useRef(false)
@@ -715,7 +728,7 @@ export function DrawingCanvas({
 
   const handleElementTransform = useCallback(
     (index: number, node: Konva.Node) => {
-      setRedoStack([])
+      pushUndo()
       setElements((prev) => {
         const element = prev[index]
         if (!element) return prev
@@ -724,14 +737,14 @@ export function DrawingCanvas({
         return updated
       })
     },
-    []
+    [pushUndo]
   )
 
   const moveSelectedLayer = useCallback(
     (mode: "front" | "forward" | "backward" | "back") => {
       if (selectedIdx === null) return
 
-      setRedoStack([])
+      pushUndo()
       setElements((prev) => {
         if (prev.length < 2 || !prev[selectedIdx]) return prev
 
@@ -786,7 +799,7 @@ export function DrawingCanvas({
           const img = new window.Image()
           img.src = result.toDataURL()
           img.onload = () => {
-            setRedoStack([])
+            pushUndo()
             setSelectedIdx(null)
             setElements([createFillElement(img, stageSize.width, stageSize.height)])
           }
@@ -812,7 +825,7 @@ export function DrawingCanvas({
 
       isDrawing.current = true
       dragStart.current = pos
-      setRedoStack([])
+      pushUndo()
       setSelectedIdx(null)
 
       if (tool === "brush" || tool === "eraser") {
@@ -923,7 +936,7 @@ export function DrawingCanvas({
 
   const commitText = useCallback(() => {
     if (textInput && textValue.trim()) {
-      setRedoStack([])
+      pushUndo()
       setElements((prev) => [
         ...prev,
         {
@@ -955,29 +968,109 @@ export function DrawingCanvas({
   // ─── Undo / Redo / Clear / Export ─────────────────
 
   const handleUndo = useCallback(() => {
-    setElements((prev) => {
-      if (prev.length === 0) return prev
-      const removed = prev[prev.length - 1]
-      setRedoStack((redo) => [...redo, removed])
-      return prev.slice(0, -1)
+    setUndoStack((stack) => {
+      if (stack.length === 0) return stack
+      const prev = stack[stack.length - 1]
+      setElements((current) => {
+        setRedoStack((redo) => [...redo, current])
+        return prev
+      })
+      return stack.slice(0, -1)
     })
     setSelectedIdx(null)
   }, [])
 
   const handleRedo = useCallback(() => {
-    setRedoStack((prev) => {
-      if (prev.length === 0) return prev
-      const restored = prev[prev.length - 1]
-      setElements((els) => [...els, restored])
-      return prev.slice(0, -1)
+    setRedoStack((stack) => {
+      if (stack.length === 0) return stack
+      const next = stack[stack.length - 1]
+      setElements((current) => {
+        setUndoStack((undo) => [...undo, current])
+        return next
+      })
+      return stack.slice(0, -1)
     })
+    setSelectedIdx(null)
   }, [])
 
   const handleClear = useCallback(() => {
+    pushUndo()
     setElements([])
-    setRedoStack([])
     setSelectedIdx(null)
-  }, [])
+  }, [pushUndo])
+
+  // ─── キーボードショートカット ──────────────────
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // テキスト入力中はスキップ
+      const tag = (e.target as HTMLElement)?.tagName
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return
+
+      const ctrlOrMeta = e.ctrlKey || e.metaKey
+
+      // Ctrl+Z: Undo
+      if (ctrlOrMeta && e.key === "z" && !e.shiftKey) {
+        e.preventDefault()
+        handleUndo()
+        return
+      }
+
+      // Ctrl+Shift+Z / Ctrl+Y: Redo
+      if ((ctrlOrMeta && e.key === "z" && e.shiftKey) || (ctrlOrMeta && e.key === "y")) {
+        e.preventDefault()
+        handleRedo()
+        return
+      }
+
+      // Ctrl+C: コピー
+      if (ctrlOrMeta && e.key === "c") {
+        setElements((currentElements) => {
+          setSelectedIdx((currentIdx) => {
+            if (currentIdx !== null && currentElements[currentIdx]) {
+              clipboardRef.current = JSON.parse(JSON.stringify(currentElements[currentIdx]))
+            }
+            return currentIdx
+          })
+          return currentElements
+        })
+        return
+      }
+
+      // Ctrl+V: ペースト
+      if (ctrlOrMeta && e.key === "v") {
+        const item = clipboardRef.current
+        if (!item) return
+        e.preventDefault()
+        pushUndo()
+        const pasted: DrawElement = JSON.parse(JSON.stringify(item))
+        pasted.transform.x += 20
+        pasted.transform.y += 20
+        setElements((prev) => {
+          const newIdx = prev.length
+          setSelectedIdx(newIdx)
+          return [...prev, pasted]
+        })
+        return
+      }
+
+      // Delete / Backspace: 選択要素を削除
+      if (e.key === "Delete" || e.key === "Backspace") {
+        pushUndo()
+        setSelectedIdx((currentIdx) => {
+          if (currentIdx === null) return null
+          setElements((prev) => {
+            if (currentIdx < 0 || currentIdx >= prev.length) return prev
+            return prev.filter((_, i) => i !== currentIdx)
+          })
+          return null
+        })
+        return
+      }
+    }
+
+    document.addEventListener("keydown", handleKeyDown)
+    return () => document.removeEventListener("keydown", handleKeyDown)
+  }, [handleUndo, handleRedo, pushUndo])
 
   const handleExport = useCallback(() => {
     const stage = stageRef.current
@@ -1099,11 +1192,14 @@ export function DrawingCanvas({
 
     let child: React.ReactNode = null
 
+    // Group 内の子要素はゼロ基準で描画（位置は Group の transform で管理）
+    const bounds = getElementBounds(el)
+
     switch (el.type) {
       case "brush":
         child = (
           <Line
-            points={el.points}
+            points={el.points.map((v, idx) => idx % 2 === 0 ? v - bounds.x : v - bounds.y)}
             stroke={el.color}
             strokeWidth={el.strokeWidth}
             tension={0.5}
@@ -1116,7 +1212,7 @@ export function DrawingCanvas({
       case "eraser":
         child = (
           <Line
-            points={el.points}
+            points={el.points.map((v, idx) => idx % 2 === 0 ? v - bounds.x : v - bounds.y)}
             stroke="#000000"
             strokeWidth={el.strokeWidth}
             tension={0.5}
@@ -1129,7 +1225,7 @@ export function DrawingCanvas({
       case "line":
         child = (
           <Line
-            points={el.points}
+            points={el.points.map((v, idx) => idx % 2 === 0 ? v - bounds.x : v - bounds.y)}
             stroke={el.color}
             strokeWidth={el.strokeWidth}
             lineCap="round"
@@ -1139,8 +1235,8 @@ export function DrawingCanvas({
       case "rect":
         child = (
           <Rect
-            x={el.x}
-            y={el.y}
+            x={el.x - bounds.x}
+            y={el.y - bounds.y}
             width={el.width}
             height={el.height}
             fill={el.filled ? el.color : undefined}
@@ -1153,8 +1249,8 @@ export function DrawingCanvas({
       case "ellipse":
         child = (
           <Ellipse
-            x={el.x}
-            y={el.y}
+            x={el.x - bounds.x}
+            y={el.y - bounds.y}
             radiusX={el.radiusX}
             radiusY={el.radiusY}
             fill={el.filled ? el.color : undefined}
@@ -1166,8 +1262,8 @@ export function DrawingCanvas({
       case "text":
         child = (
           <Text
-            x={el.x}
-            y={el.y}
+            x={el.x - bounds.x}
+            y={el.y - bounds.y}
             text={el.text}
             fill={el.color}
             fontSize={el.fontSize}
@@ -1179,8 +1275,8 @@ export function DrawingCanvas({
         child = (
           <KonvaImage
             image={el.image}
-            x={el.x}
-            y={el.y}
+            x={el.x - bounds.x}
+            y={el.y - bounds.y}
             width={el.width}
             height={el.height}
           />
@@ -1202,78 +1298,137 @@ export function DrawingCanvas({
   const showFontSize = tool === "text"
   const hasSelectedLayer = tool === "select" && selectedIdx !== null
 
+  const [colorPickerOpen, setColorPickerOpen] = useState(false)
+
   return (
     <div className="flex flex-col h-full w-full bg-white">
-      {/* ツールバー */}
-      <div className="flex h-12 items-center gap-1.5 overflow-x-auto border-b border-gray-200 bg-gray-50 px-2 [&::-webkit-scrollbar]:hidden">
-        {/* ツール選択 */}
-        {TOOL_DEFS.map((t) => (
-          <ToolButton
-            key={t.id}
-            active={tool === t.id}
-            onClick={() => {
-              setTool(t.id)
-              setSelectedIdx(null)
-            }}
-            title={t.label}
-          >
-            {t.icon}
-          </ToolButton>
-        ))}
+      {/* 上段ツールバー */}
+      <div className="flex h-9 items-center gap-1 border-b border-gray-200 bg-gray-50 px-2">
+        {/* Undo / Redo */}
+        <ToolButton
+          onClick={handleUndo}
+          disabled={undoStack.length === 0}
+          title="元に戻す (Ctrl+Z)"
+        >
+          <Undo2 size={15} />
+        </ToolButton>
+        <ToolButton
+          onClick={handleRedo}
+          disabled={redoStack.length === 0}
+          title="やり直し (Ctrl+Y)"
+        >
+          <Redo2 size={15} />
+        </ToolButton>
 
         <Separator />
 
-        {/* ブラシサイズ / フォントサイズ */}
-        {showFontSize ? (
-          <>
-            <span className="text-[10px] text-gray-500">サイズ</span>
-            <ToolButton
-              onClick={() => setFontSize((s) => Math.max(8, s - 2))}
-              title="小さく"
-            >
-              <Minus size={14} />
-            </ToolButton>
-            <span className="text-xs text-gray-600 w-6 text-center tabular-nums">
-              {fontSize}
-            </span>
-            <ToolButton
-              onClick={() => setFontSize((s) => Math.min(120, s + 2))}
-              title="大きく"
-            >
-              <Plus size={14} />
-            </ToolButton>
-          </>
-        ) : (
-          <>
-            <span className="text-[10px] text-gray-500">太さ</span>
-            <ToolButton
-              onClick={() =>
-                setStrokeWidth((s) => Math.max(MIN_BRUSH_SIZE, s - 1))
-              }
-              title="細く"
-            >
-              <Minus size={14} />
-            </ToolButton>
-            <span className="text-xs text-gray-600 w-6 text-center tabular-nums">
-              {strokeWidth}
-            </span>
-            <ToolButton
-              onClick={() =>
-                setStrokeWidth((s) => Math.min(MAX_BRUSH_SIZE, s + 1))
-              }
-              title="太く"
-            >
-              <Plus size={14} />
-            </ToolButton>
-          </>
+        {/* レイヤー操作 */}
+        <ToolButton onClick={() => moveSelectedLayer("front")} title="最前面へ" disabled={!hasSelectedLayer}>
+          <ChevronsUp size={14} />
+        </ToolButton>
+        <ToolButton onClick={() => moveSelectedLayer("forward")} title="一つ前へ" disabled={!hasSelectedLayer}>
+          <ChevronUp size={14} />
+        </ToolButton>
+        <ToolButton onClick={() => moveSelectedLayer("backward")} title="一つ後ろへ" disabled={!hasSelectedLayer}>
+          <ChevronDown size={14} />
+        </ToolButton>
+        <ToolButton onClick={() => moveSelectedLayer("back")} title="最背面へ" disabled={!hasSelectedLayer}>
+          <ChevronsDown size={14} />
+        </ToolButton>
+
+        <Separator />
+
+        <ToolButton onClick={handleClear} title="全消去">
+          <Trash2 size={15} />
+        </ToolButton>
+
+        <div className="flex-1" />
+
+        {/* 保存 */}
+        {onSave && (
+          <ToolButton onClick={handleSave} title="コスチュームに保存">
+            <Save size={15} />
+          </ToolButton>
         )}
+        <ToolButton onClick={handleExport} title="画像として保存">
+          <Download size={15} />
+        </ToolButton>
+        {collider && costumeSize && (
+          <ToolButton
+            active={showCollider}
+            onClick={() => setShowCollider((v) => !v)}
+            title="当たり判定を表示"
+          >
+            <Shield size={15} />
+          </ToolButton>
+        )}
+      </div>
+
+      {/* 下段ツールバー: 色・太さ設定 */}
+      <div className="flex h-9 items-center gap-1.5 border-b border-gray-200 bg-gray-50 px-2">
+        {/* 塗りつぶし色 */}
+        <span className="text-[10px] text-gray-500 shrink-0">塗りつぶし</span>
+        <div className="relative">
+          <button
+            className="w-6 h-6 rounded border-2 border-gray-300 cursor-pointer hover:border-gray-400 transition-colors"
+            style={{ backgroundColor: color }}
+            onClick={() => setColorPickerOpen(!colorPickerOpen)}
+            title="色を選択"
+          />
+          {colorPickerOpen && (
+            <>
+              <div className="fixed inset-0 z-50" onClick={() => setColorPickerOpen(false)} />
+              <div className="absolute left-0 top-8 z-50 rounded-lg border border-gray-200 bg-white p-2 shadow-lg">
+                <div className="grid grid-cols-5 gap-1 mb-2">
+                  {PRESET_COLORS.map((c) => (
+                    <button
+                      key={c}
+                      className="w-6 h-6 rounded-sm border cursor-pointer transition-transform hover:scale-110"
+                      style={{
+                        backgroundColor: c,
+                        borderColor: color === c ? "#4d97ff" : "#d1d5db",
+                        borderWidth: color === c ? 2 : 1,
+                      }}
+                      onClick={() => { setColor(c); setColorPickerOpen(false) }}
+                    />
+                  ))}
+                </div>
+                <input
+                  type="color"
+                  value={color}
+                  onChange={(e: ChangeEvent<HTMLInputElement>) => setColor(e.target.value)}
+                  className="w-full h-7 cursor-pointer border border-gray-200 rounded"
+                />
+              </div>
+            </>
+          )}
+        </div>
+
+        <Separator />
+
+        {/* 枠線太さ */}
+        <span className="text-[10px] text-gray-500 shrink-0">
+          {showFontSize ? "サイズ" : "太さ"}
+        </span>
+        <input
+          type="number"
+          className="w-10 h-6 rounded border border-gray-200 bg-white px-1 text-xs text-center tabular-nums outline-hidden focus:border-blue-400"
+          value={showFontSize ? fontSize : strokeWidth}
+          min={showFontSize ? 8 : MIN_BRUSH_SIZE}
+          max={showFontSize ? 120 : MAX_BRUSH_SIZE}
+          onChange={(e) => {
+            const v = Number(e.currentTarget.value)
+            if (showFontSize) setFontSize(v)
+            else setStrokeWidth(v)
+          }}
+        />
 
         {/* 塗り/枠トグル */}
         {showFillToggle && (
           <>
             <Separator />
             <button
-              className={`flex items-center gap-1 px-2 py-1 rounded text-xs cursor-pointer transition-colors ${
+              className={`flex items-center gap-1 px-2 py-0.5 rounded text-[11px] cursor-pointer transition-colors ${
                 filled ? "bg-blue-500 text-white" : "bg-gray-200 text-gray-700"
               }`}
               onClick={() => setFilled((f) => !f)}
@@ -1283,118 +1438,31 @@ export function DrawingCanvas({
             </button>
           </>
         )}
+      </div>
 
-        <Separator />
-
-        {/* カラーパレット */}
-        <div className="flex shrink-0 items-center gap-0.5">
-          {PRESET_COLORS.map((c) => (
-            <button
-              key={c}
-              className="w-5 h-5 rounded-sm border cursor-pointer transition-transform hover:scale-110"
-              style={{
-                backgroundColor: c,
-                borderColor: color === c ? "#4d97ff" : "#d1d5db",
-                borderWidth: color === c ? 2 : 1,
-              }}
-              onClick={() => setColor(c)}
-              title={c}
-            />
-          ))}
-          <input
-            type="color"
-            value={color}
-            onChange={(e: ChangeEvent<HTMLInputElement>) =>
-              setColor(e.target.value)
-            }
-            className="w-5 h-5 cursor-pointer border border-gray-300 rounded-sm"
-            title="カスタムカラー"
-          />
-        </div>
-
-        <Separator />
-
-        <div className="flex h-8 w-[170px] shrink-0 items-center gap-1 rounded-md border border-gray-200 bg-white px-2">
-          <span className="text-[9px] font-semibold tracking-[0.16em] text-gray-500">
-            LAYER
-          </span>
-          <div className="ml-auto flex items-center gap-0.5">
-            <ToolButton
-              onClick={() => moveSelectedLayer("front")}
-              title="最前面へ"
-              disabled={!hasSelectedLayer}
-            >
-              <ChevronsUp size={13} />
-            </ToolButton>
-            <ToolButton
-              onClick={() => moveSelectedLayer("forward")}
-              title="一つ前へ"
-              disabled={!hasSelectedLayer}
-            >
-              <ChevronUp size={13} />
-            </ToolButton>
-            <ToolButton
-              onClick={() => moveSelectedLayer("backward")}
-              title="一つ後ろへ"
-              disabled={!hasSelectedLayer}
-            >
-              <ChevronDown size={13} />
-            </ToolButton>
-            <ToolButton
-              onClick={() => moveSelectedLayer("back")}
-              title="最背面へ"
-              disabled={!hasSelectedLayer}
-            >
-              <ChevronsDown size={13} />
-            </ToolButton>
+      {/* メインエリア: サイドバー + キャンバス */}
+      <div className="flex flex-1 min-h-0">
+        {/* 左サイドバー: ツール選択 (2列グリッド) */}
+        <div className="flex flex-col w-[72px] shrink-0 border-r border-gray-200 bg-gray-50 p-1 gap-0.5">
+          <div className="grid grid-cols-2 gap-0.5">
+            {TOOL_DEFS.map((t) => (
+              <ToolButton
+                key={t.id}
+                active={tool === t.id}
+                onClick={() => {
+                  setTool(t.id)
+                  setSelectedIdx(null)
+                }}
+                title={t.label}
+              >
+                {t.icon}
+              </ToolButton>
+            ))}
           </div>
         </div>
 
-        <Separator />
-
-        {/* 操作ボタン */}
-        <ToolButton
-          onClick={handleUndo}
-          disabled={elements.length === 0}
-          title="元に戻す (Ctrl+Z)"
-        >
-          <Undo2 size={16} />
-        </ToolButton>
-        <ToolButton
-          onClick={handleRedo}
-          disabled={redoStack.length === 0}
-          title="やり直し (Ctrl+Y)"
-        >
-          <Redo2 size={16} />
-        </ToolButton>
-        <ToolButton onClick={handleClear} title="全消去">
-          <Trash2 size={16} />
-        </ToolButton>
-        <Separator />
-        {onSave && (
-          <ToolButton onClick={handleSave} title="コスチュームに保存">
-            <Save size={16} />
-          </ToolButton>
-        )}
-        <ToolButton onClick={handleExport} title="画像として保存">
-          <Download size={16} />
-        </ToolButton>
-        {collider && costumeSize && (
-          <>
-            <Separator />
-            <ToolButton
-              active={showCollider}
-              onClick={() => setShowCollider((v) => !v)}
-              title="当たり判定を表示"
-            >
-              <Shield size={16} />
-            </ToolButton>
-          </>
-        )}
-      </div>
-
-      {/* キャンバス */}
-      <div ref={containerRef} className="flex-1 min-h-0 overflow-hidden relative">
+        {/* キャンバス */}
+        <div ref={containerRef} className="flex-1 min-h-0 overflow-hidden relative">
         <Stage
           ref={stageRef}
           width={stageSize.width}
@@ -1588,6 +1656,7 @@ export function DrawingCanvas({
           />
         )}
       </div>
+      </div>{/* メインエリア閉じ */}
     </div>
   )
 }

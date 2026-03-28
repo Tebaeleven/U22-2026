@@ -94,10 +94,12 @@ export function BlockWorkspace({
   runtimeRef,
   selectedSpriteId,
   isActive = true,
+  debugView = false,
 }: {
   runtimeRef?: React.RefObject<Runtime | null>
   selectedSpriteId?: string | null
   isActive?: boolean
+  debugView?: boolean
 }) {
   const dispatch = useAppDispatch()
   const blockDataMap = useAppSelector((s) => s.sprites.blockDataMap)
@@ -312,19 +314,9 @@ export function BlockWorkspace({
     [spawnBlockAtPointer]
   )
 
+  // Define ブロックのクリックでは何もしない（編集は右クリックメニューから）
   const handleProcedureDefineClick = useCallback(
-    (block: BlockState, event: ReactMouseEvent<HTMLDivElement>) => {
-      if (block.def.source.kind !== "custom-define") return
-      event.stopPropagation()
-      setContextMenu(null)
-      setPreviewState(null)
-      setEditorState({
-        blockId: block.id,
-        procedureId: block.def.source.procedureId,
-        x: event.clientX + 8,
-        y: event.clientY + 8,
-      })
-    },
+    (_block: BlockState, _event: ReactMouseEvent<HTMLDivElement>) => {},
     []
   )
 
@@ -357,6 +349,11 @@ export function BlockWorkspace({
     mountedRef.current = true
 
     if (isFirstMount) {
+      // blockDataMap に初期データがあれば先にコントローラーに設定
+      const initialData = blockDataMapRef.current[selectedSpriteId ?? ""]
+      if (initialData) {
+        controller.loadProjectData(initialData)
+      }
       const workspace = new Workspace()
       workspaceRef.current = workspace
       sharedWorkspace = workspace
@@ -491,31 +488,31 @@ export function BlockWorkspace({
     }
     canvasElement.addEventListener("wheel", handleWheel, { passive: true })
 
-    // 上に別ブロックが重なっている場合、下のブロックの select/input クリックを抑制
-    // ※ .dom-overlay は pointer-events: none のため elementsFromPoint ではブロック div を検出できない
-    //    → Container 座標で手動ヒットテストを行う（contextmenu ハンドラと同じ方式）
-    const preventOccludedFormClick = (e: MouseEvent) => {
-      const target = e.target as HTMLElement
-      const tag = target.tagName
-      if (tag !== "SELECT" && tag !== "INPUT" && tag !== "TEXTAREA") return
+    const cleanupZoom = bindWheelZoom(canvasElement, { workspace })
 
-      const blockEl = target.closest("[id^=\"node-\"]") as HTMLElement | null
-      if (!blockEl) return
+    // ── フォーム要素のオクルージョン制御 ──
+    // select/input がより高い z-index のブロックに覆われている場合、
+    // pointer-events: none を動的に設定してイベント自体が届かないようにする。
+    // これにより cursor・クリック・ドラッグすべてが上のブロックに正しく届く。
+    const occludedElements = new Set<HTMLElement>()
+
+    const isFormOccluded = (el: HTMLElement): boolean => {
+      const blockEl = el.closest("[id^=\"node-\"]") as HTMLElement | null
+      if (!blockEl) return false
       const blockId = blockEl.id.replace("node-", "")
 
       const rect = canvasElement.getBoundingClientRect()
+      const elRect = el.getBoundingClientRect()
       const screenPos = {
-        x: e.clientX - rect.left,
-        y: e.clientY - rect.top,
+        x: (elRect.left + elRect.right) / 2 - rect.left,
+        y: (elRect.top + elRect.bottom) / 2 - rect.top,
       }
       const worldPos = screenToWorld(screenPos, workspace.viewport)
 
-      // containersRef はレンダー順（後ほど高い z-index）
       const containers = containersRef.current
       const ourIndex = containers.findIndex((c) => c.id === blockId)
-      if (ourIndex === -1) return
+      if (ourIndex === -1) return false
 
-      // より高い z-index のコンテナがこの位置を覆っているか確認
       for (let i = containers.length - 1; i > ourIndex; i--) {
         const c = containers[i]
         const pos = c.position
@@ -525,16 +522,45 @@ export function BlockWorkspace({
           worldPos.y >= pos.y &&
           worldPos.y <= pos.y + c.height
         ) {
-          e.preventDefault()
-          return
+          return true
         }
+      }
+      return false
+    }
+
+    // pointermove: 覆われた select/input に pointer-events: none を設定
+    const handleFormOcclusion = (e: PointerEvent) => {
+      const target = e.target as HTMLElement
+      const tag = target.tagName
+      if (tag !== "SELECT" && tag !== "INPUT" && tag !== "TEXTAREA") return
+      if (isFormOccluded(target)) {
+        target.style.pointerEvents = "none"
+        occludedElements.add(target)
+      }
+    }
+    overlayElement.addEventListener("pointermove", handleFormOcclusion, true)
+
+    // mousedown: pointer-events: none 設定前にクリックが届いた場合のフォールバック
+    const preventOccludedFormClick = (e: MouseEvent) => {
+      const target = e.target as HTMLElement
+      const tag = target.tagName
+      if (tag !== "SELECT" && tag !== "INPUT" && tag !== "TEXTAREA") return
+      if (isFormOccluded(target)) {
+        e.preventDefault()
+        target.style.pointerEvents = "none"
+        occludedElements.add(target)
       }
     }
     overlayElement.addEventListener("mousedown", preventOccludedFormClick, true)
 
-    const cleanupZoom = bindWheelZoom(canvasElement, { workspace })
-
     const tick = () => {
+      // 覆われなくなった要素の pointer-events を復元
+      for (const el of occludedElements) {
+        if (!el.isConnected || !isFormOccluded(el)) {
+          el.style.pointerEvents = ""
+          occludedElements.delete(el)
+        }
+      }
       interactionRef.current?.tick(mouse.mousePosition, mouse.buttonState)
       domSyncRef.current?.syncAll(containersRef.current)
       rafIdRef.current = requestAnimationFrame(tick)
@@ -542,6 +568,11 @@ export function BlockWorkspace({
     rafIdRef.current = requestAnimationFrame(tick)
 
     return () => {
+      // 復元
+      for (const el of occludedElements) {
+        el.style.pointerEvents = ""
+      }
+      occludedElements.clear()
       cancelAnimationFrame(rafIdRef.current)
       keyboardRef.current?.destroy()
       keyboardRef.current = null
@@ -550,6 +581,7 @@ export function BlockWorkspace({
       canvasElement.removeEventListener("mousedown", preventMiddleMouse)
       canvasElement.removeEventListener("contextmenu", handleContextMenu)
       canvasElement.removeEventListener("wheel", handleWheel)
+      overlayElement.removeEventListener("pointermove", handleFormOcclusion, true)
       overlayElement.removeEventListener("mousedown", preventOccludedFormClick, true)
       interactionRef.current = null
       domSyncRef.current = null
@@ -602,7 +634,7 @@ export function BlockWorkspace({
       }}
     >
       <svg ref={svgRef} />
-      <div ref={overlayRef} className="dom-overlay">
+      <div ref={overlayRef} className="dom-overlay" style={debugView ? { visibility: "hidden" } : undefined}>
         {snapshot.blocks.map((block, index) => (
           <BlockView
             key={block.id}
@@ -612,6 +644,7 @@ export function BlockWorkspace({
             cBlockRef={controller.getCBlockRef(block.id)}
             zIndex={index + 1}
             nestedSlots={snapshot.nestedSlots}
+            customVariables={snapshot.customVariables}
             onInputValueChange={controller.updateInputValue.bind(controller)}
             onHeaderReporterMouseDown={handleHeaderReporterMouseDown}
             onParamChipMouseDown={handleParamChipMouseDown}
@@ -646,8 +679,8 @@ export function BlockWorkspace({
         onAddParam={(procedureId, valueType) =>
           controller.createProcedureParam(procedureId, valueType)
         }
-        onMoveToken={(procedureId, tokenId, direction) =>
-          controller.moveProcedureToken(procedureId, tokenId, direction)
+        onReorderToken={(procedureId, fromIndex, toIndex) =>
+          controller.reorderProcedureToken(procedureId, fromIndex, toIndex)
         }
         onRemoveToken={(procedureId, tokenId) =>
           controller.removeProcedureToken(procedureId, tokenId)
@@ -660,6 +693,9 @@ export function BlockWorkspace({
         }
         onReturnsValueChange={(procedureId, value) =>
           controller.setProcedureReturnsValue(procedureId, value)
+        }
+        onChangeTokenType={(procedureId, tokenId, newType) =>
+          controller.changeProcedureTokenType(procedureId, tokenId, newType)
         }
       />
 

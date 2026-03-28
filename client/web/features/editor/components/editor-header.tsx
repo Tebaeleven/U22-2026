@@ -1,7 +1,7 @@
 "use client"
 
 import Link from "next/link"
-import { Flag, Square, Pause, Globe, FolderOpen, ChevronLeft, Save, Loader2, RotateCcw } from "lucide-react"
+import { Flag, Square, Pause, Globe, FolderOpen, ChevronLeft, Save, Loader2, RotateCcw, WifiOff } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import {
@@ -14,17 +14,19 @@ import {
   MenubarItem,
 } from "@/components/ui/menubar"
 
-export type EditorTileId = "palette" | "workspace" | "stage" | "sprites" | "debug"
+export type EditorTileId = "palette" | "workspace" | "stage" | "sprites" | "hierarchy" | "inspector" | "debug"
 
 export const TILE_TITLES: Record<EditorTileId, string> = {
   palette: "ブロックパレット",
   workspace: "ワークスペース",
   stage: "ステージ",
   sprites: "スプライト",
+  hierarchy: "ヒエラルキー",
+  inspector: "インスペクター",
   debug: "デバッグ",
 }
 
-const ALL_TILES: EditorTileId[] = ["palette", "workspace", "stage", "sprites", "debug"]
+const ALL_TILES: EditorTileId[] = ["palette", "workspace", "stage", "hierarchy", "inspector", "sprites", "debug"]
 
 interface EditorHeaderProps {
   projectName: string
@@ -35,11 +37,14 @@ interface EditorHeaderProps {
   onPause: () => void
   onStop: () => void
   isSaving: boolean
+  isOffline?: boolean
   onSave: () => void
   onShare: () => void
   visibleTiles: Set<EditorTileId>
   onToggleTile: (tile: EditorTileId) => void
   onResetLayout: () => void
+  debugView?: boolean
+  onToggleDebugView?: () => void
 }
 
 export function EditorHeader({
@@ -51,11 +56,14 @@ export function EditorHeader({
   onPause,
   onStop,
   isSaving,
+  isOffline = false,
   onSave,
   onShare,
   visibleTiles,
   onToggleTile,
   onResetLayout,
+  debugView = false,
+  onToggleDebugView,
 }: EditorHeaderProps) {
   return (
     <header className="relative flex h-11 items-center border-b bg-[#4d97ff] px-3 text-white">
@@ -89,6 +97,13 @@ export function EditorHeader({
                 </MenubarCheckboxItem>
               ))}
               <MenubarSeparator />
+              <MenubarCheckboxItem
+                checked={debugView}
+                onCheckedChange={() => onToggleDebugView?.()}
+              >
+                デバッグ表示
+              </MenubarCheckboxItem>
+              <MenubarSeparator />
               <MenubarItem onClick={onResetLayout}>
                 <RotateCcw className="size-3.5 mr-1.5" />
                 レイアウトをリセット
@@ -108,14 +123,16 @@ export function EditorHeader({
           size="sm"
           className="text-white/80 hover:text-white hover:bg-white/10 text-xs"
           onClick={onSave}
-          disabled={isSaving}
+          disabled={isSaving || isOffline}
         >
           {isSaving ? (
             <Loader2 className="size-3.5 mr-1 animate-spin" />
+          ) : isOffline ? (
+            <WifiOff className="size-3.5 mr-1" />
           ) : (
             <Save className="size-3.5 mr-1" />
           )}
-          {isSaving ? "保存中..." : "保存"}
+          {isSaving ? "保存中..." : isOffline ? "オフライン" : "保存"}
         </Button>
       </div>
 
@@ -168,7 +185,7 @@ export function EditorHeader({
           size="sm"
           className="bg-white text-[#4d97ff] hover:bg-white/90 text-xs"
           onClick={onShare}
-          disabled={isSaving}
+          disabled={isSaving || isOffline}
         >
           <Globe className="size-3.5 mr-1" />
           共有する

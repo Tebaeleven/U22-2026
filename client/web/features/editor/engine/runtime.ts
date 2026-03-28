@@ -4,6 +4,7 @@ import type {
   CompiledProcedure,
   CompiledProgram,
   GameSceneProxy,
+  PhysicsMode,
   SpriteRuntime,
 } from "./types"
 import type { SpriteDef } from "../constants"
@@ -41,11 +42,22 @@ export class Runtime {
   private disabledWatchers: Map<string, Set<string>> = new Map()
   // --- Observer: 再帰防止ガード ---
   private notifyingVariable: string | null = null
+  // --- クローン管理 ---
+  private cloneCounter = 0
+  private spriteDefs: SpriteDef[] = []
+  // --- 衝突コールバック（spriteId → [{targetName, eventName}]） ---
+  private collisionCallbacks: Map<string, Array<{ targetName: string; eventName: string }>> = new Map()
+  // --- event_whentouched の接触状態追跡 ---
+  private touchingState: Map<string, Set<string>> = new Map()
+  // --- リスタート要求 ---
+  private restartRequested = false
 
   /** 外部コールバック: スプライト状態が更新された時 */
   onSpritesUpdate: ((sprites: SpriteRuntime[]) => void) | null = null
   /** 外部コールバック: 実行が停止した時 */
   onStop: (() => void) | null = null
+  /** 外部コールバック: リスタート要求時 */
+  onRestart: (() => void) | null = null
 
   constructor() {
     this.sequencer = new Sequencer({
@@ -63,6 +75,12 @@ export class Runtime {
       cacheReporterPreview: (blockId, spriteId, value) => {
         this.reporterPreviewCache.set(this.getReporterPreviewKey(blockId, spriteId), value)
       },
+      createClone: (requestingSpriteId, targetId) => this.createClone(requestingSpriteId, targetId),
+      deleteClone: (spriteId) => this.deleteClone(spriteId),
+      registerCollisionCallback: (spriteId, targetName, eventName) => {
+        this.registerCollisionCallback(spriteId, targetName, eventName)
+      },
+      restartGame: () => this.requestRestart(),
     })
   }
 
@@ -80,6 +98,9 @@ export class Runtime {
 
     this.reporterPreviewCache.clear()
     this.scene = scene ?? null
+    this.spriteDefs = spriteDefs
+    this.cloneCounter = 0
+    this.collisionCallbacks.clear()
 
     // 全スプライトのプロシージャをマージ
     this.procedures = {}
@@ -104,6 +125,13 @@ export class Runtime {
         physicsMode: "none",
         velocityX: 0,
         velocityY: 0,
+        bodyEnabled: true,
+        bounce: 0,
+        collideWorldBounds: false,
+        allowGravity: null,
+        opacity: 100,
+        tint: null,
+        flipX: false,
       })
     }
 
@@ -176,6 +204,11 @@ export class Runtime {
     this.variables.clear()
     this.disabledWatchers.clear()
     this.notifyingVariable = null
+    this.cloneCounter = 0
+    this.spriteDefs = []
+    this.collisionCallbacks.clear()
+    this.touchingState.clear()
+    this.restartRequested = false
 
     if (this.keydownHandler && typeof document !== "undefined") {
       document.removeEventListener("keydown", this.keydownHandler)
@@ -298,6 +331,7 @@ export class Runtime {
 
   private tick = () => {
     if (!this.running || this.paused) return
+    this.inTick = true
 
     if (this.scene) {
       const physPositions = this.scene.readPhysicsPositions()
@@ -314,6 +348,12 @@ export class Runtime {
 
     this.threads = this.sequencer.stepThreads(this.threads)
 
+    // 衝突コールバックのチェック
+    this.checkCollisionCallbacks()
+
+    // event_whentouched の衝突チェック
+    this.checkTouchEvents()
+
     if (this.scene) {
       for (const sprite of this.sprites.values()) {
         if (sprite.physicsMode === "dynamic") {
@@ -328,16 +368,27 @@ export class Runtime {
       (s) =>
         s.opcode === "event_whenkeypressed" ||
         s.opcode === "observer_whenvarchanges" ||
-        s.opcode === "observer_wheneventreceived"
+        s.opcode === "observer_wheneventreceived" ||
+        s.opcode === "clone_whencloned" ||
+        s.opcode === "event_whentouched"
     )
 
     if (this.threads.length === 0 && !hasWaitingScripts) {
       this.running = false
       this.rafId = 0
+      this.inTick = false
       this.onStop?.()
       return
     }
 
+    if (this.restartRequested) {
+      this.restartRequested = false
+      this.inTick = false
+      this.onRestart?.()
+      return
+    }
+
+    this.inTick = false
     this.rafId = requestAnimationFrame(this.tick)
   }
 
@@ -360,7 +411,9 @@ export class Runtime {
   }
 
   /** スレッドが追加された後にループを再開するヘルパー */
+  private inTick = false
   private ensureTickRunning() {
+    if (this.inTick) return
     if (this.threads.length > 0 && !this.rafId && !this.paused && this.running) {
       this.tick()
     }
@@ -420,6 +473,166 @@ export class Runtime {
       this.disabledWatchers.set(varName, new Set())
     }
     this.disabledWatchers.get(varName)?.add(spriteId)
+  }
+
+  // ─── クローン管理 ─────────────────────────────────────
+
+  /** クローンを生成 */
+  createClone(requestingSpriteId: string, targetId?: string) {
+    const sourceId = targetId ?? requestingSpriteId
+    const sourceSprite = this.sprites.get(sourceId)
+    if (!sourceSprite) return
+
+    // 呼び出し元スプライト（別スプライトのクローンの場合、呼び出し元の位置を使う）
+    const caller = this.sprites.get(requestingSpriteId)
+
+    this.cloneCounter += 1
+    const cloneId = `${sourceId}__clone_${this.cloneCounter}`
+
+    // スプライトの状態をコピー（呼び出し元の位置に出現）
+    const cloneSprite: SpriteRuntime = {
+      ...sourceSprite,
+      id: cloneId,
+      parentId: sourceSprite.parentId ?? sourceId,
+      x: caller?.x ?? sourceSprite.x,
+      y: caller?.y ?? sourceSprite.y,
+      visible: true,
+      sayText: "",
+      sayTimer: null,
+    }
+    this.sprites.set(cloneId, cloneSprite)
+
+    // 元スプライトのスクリプトをクローンにも登録
+    const parentId = cloneSprite.parentId
+    for (const s of this.scripts) {
+      if (s.spriteId !== parentId) continue
+      this.scripts.push({
+        opcode: s.opcode,
+        script: s.script,
+        hatBlockId: s.hatBlockId,
+        spriteId: cloneId,
+        hatArgs: s.hatArgs,
+      })
+    }
+
+    // "clone_whencloned" スクリプトを起動
+    for (const s of this.scripts) {
+      if (s.spriteId !== cloneId) continue
+      if (s.opcode !== "clone_whencloned") continue
+      this.threads.push(new Thread(s.script, cloneId, s.hatBlockId))
+    }
+
+    this.ensureTickRunning()
+  }
+
+  /** クローンを削除 */
+  deleteClone(spriteId: string) {
+    const sprite = this.sprites.get(spriteId)
+    if (!sprite || !sprite.parentId) return
+
+    // スレッドを停止
+    for (const t of this.threads) {
+      if (t.spriteId === spriteId) t.status = "done"
+    }
+
+    // スクリプト登録を削除
+    this.scripts = this.scripts.filter((s) => s.spriteId !== spriteId)
+
+    // 衝突コールバックを削除
+    this.collisionCallbacks.delete(spriteId)
+
+    // スプライトを削除
+    this.sprites.delete(spriteId)
+
+    // GameScene からも削除
+    this.scene?.removeSprite(spriteId)
+  }
+
+  // ─── 衝突コールバック ────────────────────────────────
+
+  /** 衝突コールバックを登録 */
+  registerCollisionCallback(spriteId: string, targetName: string, eventName: string) {
+    if (!this.collisionCallbacks.has(spriteId)) {
+      this.collisionCallbacks.set(spriteId, [])
+    }
+    this.collisionCallbacks.get(spriteId)!.push({ targetName, eventName })
+
+    // Phaser 側にもコールバック登録
+    const sprite = this.sprites.get(spriteId)
+    if (!sprite) return
+    const allSprites = Array.from(this.sprites.values())
+    const target = allSprites.find((s) => s.name === targetName)
+    if (!target || !this.scene) return
+
+    this.scene.registerCollisionCallback(spriteId, target.id, () => {
+      this.emitEvent(eventName, { self: sprite.name, other: targetName })
+    })
+  }
+
+  /** tick 内で衝突コールバックのチェック（ポーリング型フォールバック） */
+  private checkCollisionCallbacks() {
+    if (!this.scene) return
+
+    for (const [spriteId, callbacks] of this.collisionCallbacks) {
+      const sprite = this.sprites.get(spriteId)
+      if (!sprite) continue
+
+      for (const { targetName, eventName } of callbacks) {
+        const allSprites = Array.from(this.sprites.values())
+        const target = allSprites.find((s) => s.name === targetName)
+        if (!target) continue
+
+        if (this.scene.checkOverlap(spriteId, target.id)) {
+          this.emitEvent(eventName, { self: sprite.name, other: targetName })
+        }
+      }
+    }
+  }
+
+  /** リスタート要求 */
+  requestRestart() {
+    this.restartRequested = true
+  }
+
+  /** event_whentouched ハットの衝突チェック */
+  private checkTouchEvents() {
+    if (!this.scene) return
+
+    for (const s of this.scripts) {
+      if (s.opcode !== "event_whentouched") continue
+
+      const targetName = String(s.hatArgs.TARGET ?? "")
+      const sprite = this.sprites.get(s.spriteId)
+      if (!sprite || !sprite.bodyEnabled) continue
+
+      const allSprites = Array.from(this.sprites.values())
+      const targets = targetName === "any"
+        ? allSprites.filter((t) => t.id !== s.spriteId)
+        : allSprites.filter((t) => t.name === targetName)
+
+      const stateKey = `${s.spriteId}:${s.hatBlockId}`
+      if (!this.touchingState.has(stateKey)) {
+        this.touchingState.set(stateKey, new Set())
+      }
+      const prevTouching = this.touchingState.get(stateKey)!
+      const currentTouching = new Set<string>()
+
+      for (const target of targets) {
+        if (!target.bodyEnabled) continue
+        if (this.scene.checkOverlap(s.spriteId, target.id)) {
+          currentTouching.add(target.id)
+          // 新規接触の場合のみスレッド生成（デバウンス）
+          if (!prevTouching.has(target.id)) {
+            this.restartThread(s.hatBlockId, s.spriteId, s.script, {
+              collisionTarget: target.name,
+            })
+          }
+        }
+      }
+
+      this.touchingState.set(stateKey, currentTouching)
+    }
+    // ensureTickRunning は不要（tick 内から呼ばれるため）
   }
 
   private getReporterPreviewKey(blockId: string, spriteId: string): string {

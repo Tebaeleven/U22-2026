@@ -120,7 +120,7 @@ gen-types:
 
 # ビルドしてクライアントの node_modules にコピー
 build-vpl:
-	cd $(CLIENT_DIR) && bun run build:headless-vpl
+	cd $(CLIENT_DIR) && bun install && bun run build:headless-vpl
 
 # テスト実行
 test-vpl:

@@ -157,6 +157,7 @@
 .scratch-block {
   cursor: grab;
   position: absolute;
+  pointer-events: auto;
   display: flex;
   align-items: center;
   white-space: nowrap;

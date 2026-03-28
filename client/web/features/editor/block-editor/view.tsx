@@ -17,16 +17,14 @@ import {
   C_HEADER_H,
   C_W,
   INLINE_SLOT_BASE_H,
-  SHAPE_CONFIGS,
   getHeaderReporterCopies,
   getHeaderReporterCopyLabel,
-  getBlockSize,
   getInputDisplayValue,
   getInputValue,
   hatReporterChipWidth,
   inputWidth,
   isInlineReporterVariableInput,
-  isCBlockShape,
+  resolveBlockBehavior,
 } from "./blocks"
 
 function ReporterCopyChip({
@@ -56,6 +54,7 @@ function InlineToken({
   index,
   createdBlock,
   nestedSlots,
+  customVariables,
   onInputValueChange,
   onParamChipMouseDown,
   onReporterCopyMouseDown,
@@ -65,6 +64,7 @@ function InlineToken({
   index: number
   createdBlock?: CreatedBlock
   nestedSlots: Record<string, string>
+  customVariables?: string[]
   onInputValueChange?: (
     blockId: string,
     inputIndex: number,
@@ -173,6 +173,10 @@ function InlineToken({
   }
 
   if (input.type === "dropdown") {
+    const isVariableDropdown = block.def.category === "variables"
+    const extraOptions = isVariableDropdown && customVariables
+      ? customVariables.filter((v) => !input.options.includes(v))
+      : []
     return (
       <span className="scratch-slot-host" style={hostStyle}>
         <select
@@ -183,6 +187,11 @@ function InlineToken({
           style={{ width: slotWidth }}
         >
           {input.options.map((option) => (
+            <option key={option} value={option}>
+              {option}
+            </option>
+          ))}
+          {extraOptions.map((option) => (
             <option key={option} value={option}>
               {option}
             </option>
@@ -242,6 +251,7 @@ export function BlockView({
   cBlockRef,
   zIndex,
   nestedSlots,
+  customVariables,
   onInputValueChange,
   onHeaderReporterMouseDown,
   onParamChipMouseDown,
@@ -254,6 +264,7 @@ export function BlockView({
   cBlockRef?: CBlockRef
   zIndex?: number
   nestedSlots?: Record<string, string>
+  customVariables?: string[]
   onInputValueChange?: (
     blockId: string,
     inputIndex: number,
@@ -282,7 +293,7 @@ export function BlockView({
   const bg = def.color
   const ns = nestedSlots ?? {}
   const blockStyle = { zIndex }
-  const shape = SHAPE_CONFIGS[def.shape]
+  const behavior = resolveBlockBehavior(def)
   const headerReporterCopies = getHeaderReporterCopies(def)
 
   const renderInputs = () =>
@@ -294,6 +305,7 @@ export function BlockView({
         index={index}
         createdBlock={createdBlock}
         nestedSlots={ns}
+        customVariables={customVariables}
         onInputValueChange={onInputValueChange}
         onParamChipMouseDown={onParamChipMouseDown}
         onReporterCopyMouseDown={onHeaderReporterMouseDown}
@@ -310,8 +322,8 @@ export function BlockView({
         style={{
           ...blockStyle,
           background: bg,
-          minWidth: shape.size.w,
-          minHeight: container?.minHeight ?? shape.size.h,
+          minWidth: behavior.size.w,
+          minHeight: container?.minHeight ?? behavior.size.h,
           cursor: isCustomReporter ? "pointer" : undefined,
         }}
         onClick={(event) => {
@@ -335,7 +347,7 @@ export function BlockView({
         style={{
           ...blockStyle,
           background: bg,
-          minWidth: shape.size.w,
+          minWidth: behavior.size.w,
           cursor: isProcedureDefine ? "pointer" : undefined,
         }}
         onClick={(event) => {
@@ -355,8 +367,8 @@ export function BlockView({
     )
   }
 
-  if (isCBlockShape(def.shape)) {
-    const bodyCount = def.shape === "c-block-else" ? 2 : 1
+  if (behavior.bodies.length > 0) {
+    const bodyCount = behavior.bodies.length
     return (
       <div
         id={`node-${block.id}`}
@@ -365,7 +377,7 @@ export function BlockView({
           ...blockStyle,
           background: bg,
           minWidth: C_W,
-          minHeight: container?.minHeight ?? getBlockSize(def.shape).h,
+          minHeight: container?.minHeight ?? behavior.size.h,
         }}
       >
         <div
@@ -417,7 +429,7 @@ export function BlockView({
     <div
       id={`node-${block.id}`}
       className="scratch-block scratch-stack"
-      style={{ ...blockStyle, background: bg, minWidth: shape.size.w }}
+      style={{ ...blockStyle, background: bg, minWidth: behavior.size.w }}
     >
       {def.name && <span>{def.name}</span>}
       {renderInputs()}

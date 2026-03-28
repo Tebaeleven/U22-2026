@@ -24,6 +24,10 @@ export interface SequencerCallbacks {
   getScene: () => GameSceneProxy | null
   getProcedure: (procedureId: string) => CompiledProcedure | undefined
   cacheReporterPreview: (blockId: string, spriteId: string, value: unknown) => void
+  createClone: (requestingSpriteId: string, targetId?: string) => void
+  deleteClone: (spriteId: string) => void
+  registerCollisionCallback: (spriteId: string, targetName: string, eventName: string) => void
+  restartGame: () => void
 }
 
 /**
@@ -97,6 +101,12 @@ export class Sequencer {
         getMouseX: () => this.callbacks.getMouseX(),
         getMouseY: () => this.callbacks.getMouseY(),
         getScene: () => this.callbacks.getScene(),
+        createClone: (targetId?: string) => this.callbacks.createClone(thread.spriteId, targetId),
+        deleteClone: () => this.callbacks.deleteClone(thread.spriteId),
+        onCollide: (targetName: string, callbackEvent: string) =>
+          this.callbacks.registerCollisionCallback(thread.spriteId, targetName, callbackEvent),
+        getCollisionTarget: () => String(thread.context.collisionTarget ?? ""),
+        restartGame: () => this.callbacks.restartGame(),
       }
 
       const resolvedArgs = this.resolveInputBlocks(block, block.args, thread, util)
@@ -177,7 +187,22 @@ export class Sequencer {
   }
 
   /** Reporter/Boolean ブロックを実行して戻り値を返す（再帰対応） */
+  private reporterDepth = 0
   private executeReporter(
+    block: ScriptBlock,
+    thread: Thread,
+    util: BlockUtil
+  ): unknown {
+    if (this.reporterDepth > 50) return undefined
+    this.reporterDepth += 1
+    try {
+      return this.executeReporterInner(block, thread, util)
+    } finally {
+      this.reporterDepth -= 1
+    }
+  }
+
+  private executeReporterInner(
     block: ScriptBlock,
     thread: Thread,
     util: BlockUtil
