@@ -1,8 +1,8 @@
 "use client"
 
 import Image from "next/image"
-import { useCallback } from "react"
-import { Plus, Trash2 } from "lucide-react"
+import { useCallback, useState } from "react"
+import { Plus, Trash2, Layers } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { DrawingCanvas } from "./drawing-canvas"
@@ -33,7 +33,10 @@ export function CostumeEditor({
   onSaveCostume,
   onAutoEstimateCollider,
 }: CostumeEditorProps) {
+  const [onionSkin, setOnionSkin] = useState(false)
   const currentCostume = sprite.costumes[sprite.currentCostumeIndex]
+  const prevCostume = sprite.costumes[sprite.currentCostumeIndex - 1] ?? null
+  const nextCostume = sprite.costumes[sprite.currentCostumeIndex + 1] ?? null
 
   const handleSave = useCallback(
     async (dataUrl: string, width: number, height: number) => {
@@ -83,15 +86,50 @@ export function CostumeEditor({
       </div>
 
       {/* 右: お絵描きキャンバス */}
-      <div className="flex-1 min-w-0">
+      <div className="flex-1 min-w-0 relative">
         {currentCostume ? (
-          <DrawingCanvas
-            key={currentCostume.id}
-            onSave={handleSave}
-            initialDataUrl={currentCostume.dataUrl}
-            collider={sprite.collider}
-            costumeSize={{ width: currentCostume.width, height: currentCostume.height }}
-          />
+          <>
+            {/* オニオンスキン トグル */}
+            <Button
+              variant={onionSkin ? "default" : "ghost"}
+              size="icon-xs"
+              onClick={() => setOnionSkin((v) => !v)}
+              className="absolute top-1.5 right-1.5 z-20 h-6 w-6"
+              title="オニオンスキン"
+            >
+              <Layers className="size-3.5" />
+            </Button>
+
+            {/* オニオンスキン オーバーレイ */}
+            {onionSkin && (prevCostume?.dataUrl || nextCostume?.dataUrl) && (
+              <div className="absolute inset-0 z-10 pointer-events-none flex items-center justify-center">
+                {prevCostume?.dataUrl && (
+                  <img
+                    src={prevCostume.dataUrl}
+                    alt="前のコスチューム"
+                    className="absolute max-w-full max-h-full object-contain opacity-30"
+                    style={{ filter: "sepia(1) saturate(3) hue-rotate(180deg)" }}
+                  />
+                )}
+                {nextCostume?.dataUrl && (
+                  <img
+                    src={nextCostume.dataUrl}
+                    alt="次のコスチューム"
+                    className="absolute max-w-full max-h-full object-contain opacity-30"
+                    style={{ filter: "sepia(1) saturate(3) hue-rotate(0deg)" }}
+                  />
+                )}
+              </div>
+            )}
+
+            <DrawingCanvas
+              key={currentCostume.id}
+              onSave={handleSave}
+              initialDataUrl={currentCostume.dataUrl}
+              collider={sprite.collider}
+              costumeSize={{ width: currentCostume.width, height: currentCostume.height }}
+            />
+          </>
         ) : (
           <div className="flex items-center justify-center h-full text-gray-400 text-sm">
             コスチュームを追加してください

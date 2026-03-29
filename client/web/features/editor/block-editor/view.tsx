@@ -106,15 +106,17 @@ function InlineToken({
   const slot = createdBlock?.slotLayouts.find(
     (item) => item.info.inputIndex === index
   )
-  const slotWidth = Math.max(
-    slot?.layout.width ?? 0,
-    slot?.info.w ?? inputWidth(input, getInputValue(input, block, index))
-  )
+  const isNested = Boolean(nestedSlots[`${block.id}-${index}`])
+  const baseWidth = slot?.info.w ?? inputWidth(input, getInputValue(input, block, index))
+  // ネスト時は AutoLayout の実際の幅を使う（余白を防ぐ）
+  // 未ネスト時は基本幅と AutoLayout 幅の大きい方を使う
+  const slotWidth = isNested
+    ? (slot?.layout.width ?? baseWidth)
+    : Math.max(slot?.layout.width ?? 0, baseWidth)
   const slotHeight = Math.max(
     slot?.layout.height ?? 0,
     slot?.info.h ?? INLINE_SLOT_BASE_H
   )
-  const isNested = Boolean(nestedSlots[`${block.id}-${index}`])
   const hostStyle = { width: slotWidth, height: slotHeight }
 
   if (isNested) {

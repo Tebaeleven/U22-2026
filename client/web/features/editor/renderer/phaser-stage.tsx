@@ -306,6 +306,29 @@ export const PhaserStage = forwardRef<PhaserStageHandle, PhaserStageProps>(
       [gizmoSpriteId, onSpritePositionChange]
     )
 
+    // FPS 計測
+    const [fps, setFps] = useState(0)
+    const fpsFrameCount = useRef(0)
+    const fpsLastTime = useRef(0)
+    useEffect(() => {
+      if (!isRunning) { setFps(0); return }
+      fpsFrameCount.current = 0
+      fpsLastTime.current = performance.now()
+      let rafId = 0
+      const measure = () => {
+        fpsFrameCount.current++
+        const now = performance.now()
+        if (now - fpsLastTime.current >= 1000) {
+          setFps(fpsFrameCount.current)
+          fpsFrameCount.current = 0
+          fpsLastTime.current = now
+        }
+        rafId = requestAnimationFrame(measure)
+      }
+      rafId = requestAnimationFrame(measure)
+      return () => cancelAnimationFrame(rafId)
+    }, [isRunning])
+
     return (
       <div className="flex flex-col border-b">
         <div
@@ -314,6 +337,12 @@ export const PhaserStage = forwardRef<PhaserStageHandle, PhaserStageProps>(
         >
           {/* Phaser キャンバス（入力イベントも Phaser が処理） */}
           <div ref={containerRef} className="absolute inset-0 overflow-hidden" />
+          {/* FPS 表示 */}
+          {isRunning && fps > 0 && (
+            <div className="absolute top-1 right-1 z-20 bg-black/50 text-white text-xs px-1.5 py-0.5 rounded font-mono">
+              {fps} FPS
+            </div>
+          )}
           {/* Gizmo オーバーレイ（pointer-events: none でキャンバスの入力を遮らない） */}
           {!isRunning && effectiveGizmoSprite && (
             <div

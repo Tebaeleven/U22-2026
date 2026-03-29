@@ -18,7 +18,12 @@ import { resolveBlockBehavior } from "./block-behavior"
 
 /** テキスト幅をピクセル単位で概算する */
 export function estimateTextWidth(text: string): number {
-  return text.length * 7.5
+  let w = 0
+  for (let i = 0; i < text.length; i++) {
+    // ASCII 範囲は半角幅、それ以外（日本語等）は全角幅
+    w += text.charCodeAt(i) > 127 ? 13 : 7.5
+  }
+  return w
 }
 
 function clamp(value: number, min: number, max: number): number {
@@ -156,12 +161,9 @@ export function inputWidth(input: InputDef, value?: string): number {
     }
     case "dropdown": {
       const text = value ?? input.default
-      const widestOption = input.options.reduce((max, option) => {
-        return Math.max(max, estimateTextWidth(option))
-      }, estimateTextWidth(text))
       const minWidth = input.minWidth ?? INPUT_DROPDOWN_MIN_W
       const maxWidth = input.maxWidth ?? INPUT_MAX_W
-      return clamp(Math.ceil(widestOption + 30), minWidth, maxWidth)
+      return clamp(Math.ceil(estimateTextWidth(text) + 22), minWidth, maxWidth)
     }
     case "param-chip":
       return hatReporterChipWidth(input.label)

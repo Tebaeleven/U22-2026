@@ -220,7 +220,6 @@ export class BlockEditorController {
 
   /** スプライト名変更時に、全ブロックの該当ドロップダウン値を旧名→新名に置換する */
   renameSpriteInBlocks(oldName: string, newName: string): void {
-    console.log("[renameSpriteInBlocks]", { oldName, newName, mapSize: this.createdMap.size })
     for (const [blockId, created] of this.createdMap.entries()) {
       const opcode = created.state.def.opcode
       if (!opcode) continue
@@ -232,7 +231,6 @@ export class BlockEditorController {
       const inputDef = created.state.def.inputs[idx]
       const defaultVal = inputDef && "default" in inputDef ? inputDef.default : undefined
       const current = created.state.inputValues[idx] ?? defaultVal
-      console.log("[renameSpriteInBlocks] block:", { blockId, opcode, idx, current, oldName, match: current === oldName })
       if (current === oldName) {
         this.updateInputValue(blockId, idx, newName)
       }
@@ -871,6 +869,51 @@ export class BlockEditorController {
     if (!root) return [blockId]
     const chain = collectConnectedChain(root)
     return chain.map((c: Container) => c.id)
+  }
+
+  /** ブロックを整頓（トップレベルのスクリプトを縦に整列） */
+  cleanupBlocks(): void {
+    if (!this.workspace) return
+    const nestedIds = new Set<string>()
+
+    // ネストされているコンテナIDを収集（スロット）
+    for (const childId of Object.values(this.snapshot.nestedSlots)) {
+      nestedIds.add(childId)
+    }
+    // Cブロックのボディ内の子
+    for (const ref of this.cBlockRefs) {
+      for (const bodyLayout of ref.bodyLayouts) {
+        for (const child of bodyLayout.Children) {
+          nestedIds.add(child.id)
+        }
+      }
+    }
+    // スナップ接続の子（target がスタック接続の子）
+    for (const conn of this.snapConnections) {
+      if (conn.locked) {
+        nestedIds.add(conn.target.id)
+      }
+    }
+
+    // トップレベル（どこにも接続されていない）コンテナを抽出
+    const topLevelContainers: Container[] = []
+    for (const c of this.containers) {
+      if (!nestedIds.has(c.id)) {
+        topLevelContainers.push(c)
+      }
+    }
+
+    // 縦に整列（左上から下方向に配置、間隔24px）
+    const startX = 48
+    let currentY = 48
+    const gap = 24
+
+    for (const container of topLevelContainers) {
+      container.move(startX, currentY)
+      currentY += container.height + gap
+    }
+
+    this.bumpRevision()
   }
 
   /** 全購読者に変更を通知する */

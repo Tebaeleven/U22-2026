@@ -25,6 +25,11 @@ import {
   restoreSnapshot,
   saveBlockData,
   loadAllBlockData,
+  renameSpriteInBlockDataMap,
+  duplicateSprite,
+  moveSprite,
+  addSound,
+  deleteSound,
 } from "@/lib/store/slices/sprites"
 import { setProjectName } from "@/lib/store/slices/project"
 import { startRuntime, stopRuntime, pauseRuntime, resumeRuntime } from "@/lib/store/slices/runtime"
@@ -37,6 +42,7 @@ import { HierarchyPanel } from "@/features/editor/components/hierarchy-panel"
 import { InspectorPanel } from "@/features/editor/components/inspector-panel"
 import { CostumeEditor } from "@/features/editor/components/costume-editor"
 import { SpriteColliderEditor } from "@/features/editor/components/sprite-collider-editor"
+import { SoundEditor } from "@/features/editor/components/sound-editor"
 import { useProjectSave } from "@/features/editor/hooks/use-project-save"
 import { PhaserStage, type PhaserStageHandle } from "@/features/editor/renderer/phaser-stage"
 import {
@@ -46,6 +52,10 @@ import {
 } from "@/components/ui/dialog"
 import { VisuallyHidden } from "radix-ui"
 import { DebugPanel } from "@/features/editor/components/debug-panel"
+import { ShortcutsDialog } from "@/features/editor/components/shortcuts-dialog"
+import { ConsolePanel } from "@/features/editor/components/console-panel"
+import { SampleBrowser } from "@/features/editor/components/sample-browser"
+import { AssetBrowser } from "@/features/editor/components/asset-browser"
 import { buildProgramsForSprites } from "@/features/editor/engine/program-builder"
 import { Runtime } from "@/features/editor/engine/runtime"
 import {
@@ -61,17 +71,93 @@ import {
   type BlockCategoryId,
   type ColliderDef,
 } from "@/features/editor/constants"
-import { SAMPLE_PROJECTS, resolveSample } from "@/features/editor/samples"
-import { Flag, Pause, Square } from "lucide-react"
+import { SAMPLE_PROJECTS, resolveSample } from "@/features/editor/samples/index"
+import { Flag, Pause, Square, StepForward, Zap, Rabbit, Gauge, Maximize2, Minimize2 } from "lucide-react"
+import type { SpeedMode } from "@/features/editor/engine/sequencer"
 import { Button } from "@/components/ui/button"
 
-// ─── Mosaic レイアウト ──────────────────────────────
+// ─── Mosaic レイアウトプリセット ──────────────────────
+
+const LAYOUT_PRESETS: Record<string, { label: string; layout: MosaicNode<EditorTileId> }> = {
+  coding: {
+    label: "コーディング",
+    layout: {
+      type: "split",
+      direction: "row",
+      children: [
+        {
+          type: "split",
+          direction: "column",
+          children: ["palette", "samples"],
+          splitPercentages: [60, 40],
+        },
+        "workspace",
+        {
+          type: "split",
+          direction: "column",
+          children: [
+            "stage",
+            "sprites",
+            {
+              type: "split",
+              direction: "row",
+              children: ["hierarchy", "inspector"],
+              splitPercentages: [35, 65],
+            },
+          ],
+          splitPercentages: [35, 25, 40],
+        },
+      ],
+      splitPercentages: [13, 57, 30],
+    },
+  },
+  debug: {
+    label: "デバッグ",
+    layout: {
+      type: "split",
+      direction: "row",
+      children: [
+        "workspace",
+        {
+          type: "split",
+          direction: "column",
+          children: ["stage", "debug", "console"],
+          splitPercentages: [40, 35, 25],
+        },
+      ],
+      splitPercentages: [55, 45],
+    },
+  },
+  design: {
+    label: "デザイン",
+    layout: {
+      type: "split",
+      direction: "row",
+      children: [
+        {
+          type: "split",
+          direction: "column",
+          children: ["hierarchy", "inspector"],
+          splitPercentages: [40, 60],
+        },
+        "stage",
+        "sprites",
+      ],
+      splitPercentages: [20, 60, 20],
+    },
+  },
+}
 
 const DEFAULT_LAYOUT: MosaicNode<EditorTileId> = {
   type: "split",
   direction: "row",
   children: [
-    "palette",
+    {
+      type: "split",
+      direction: "column",
+      children: ["palette", "samples"],
+      splitPercentages: [60, 40],
+    },
     "workspace",
     {
       type: "split",
@@ -147,7 +233,7 @@ function addTile(
 
 // ─── エディタタブ（コード / コスチューム / 当たり判定） ──
 
-type EditorTab = "code" | "costumes" | "collider"
+type EditorTab = "code" | "costumes" | "collider" | "sounds"
 
 export function EditorContent() {
   const dispatch = useAppDispatch()
@@ -158,6 +244,9 @@ export function EditorContent() {
   const isRunning = useAppSelector((s) => s.runtime.isRunning)
   const isPaused = useAppSelector((s) => s.runtime.isPaused)
   const selectedCategory = useAppSelector((s) => s.ui.selectedCategory)
+
+  const [speedMode, setSpeedMode] = useState<SpeedMode>("normal")
+  const [shortcutsOpen, setShortcutsOpen] = useState(false)
 
   const searchParams = useSearchParams()
   const projectIdParam = searchParams.get("id")
@@ -182,6 +271,7 @@ export function EditorContent() {
   // ワークスペースのタブ（コード / コスチューム / 当たり判定）
   const [editorTab, setEditorTab] = useState<EditorTab>("code")
   const [stageExpanded, setStageExpanded] = useState(false)
+  const [isFullscreen, setIsFullscreen] = useState(false)
   const [debugView, setDebugView] = useState(false)
   const [deletingSpriteId, setDeletingSpriteId] = useState<string | null>(null)
 
@@ -197,6 +287,35 @@ export function EditorContent() {
     return () => {
       runtimeRef.current?.stop()
     }
+  }, [])
+
+  // ブラウザフルスクリーン状態の追跡
+  useEffect(() => {
+    const handleChange = () => setIsFullscreen(!!document.fullscreenElement)
+    document.addEventListener("fullscreenchange", handleChange)
+    return () => document.removeEventListener("fullscreenchange", handleChange)
+  }, [])
+
+  const toggleFullscreen = useCallback(() => {
+    if (document.fullscreenElement) {
+      document.exitFullscreen()
+    } else {
+      document.documentElement.requestFullscreen()
+    }
+  }, [])
+
+  // ? キーでショートカット一覧を表示
+  useEffect(() => {
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === "?" && !e.ctrlKey && !e.metaKey) {
+        const target = e.target as HTMLElement
+        if (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable) return
+        e.preventDefault()
+        setShortcutsOpen(true)
+      }
+    }
+    document.addEventListener("keydown", handleKey)
+    return () => document.removeEventListener("keydown", handleKey)
   }, [])
 
   const project = useProjectSave({
@@ -295,13 +414,25 @@ export function EditorContent() {
     dispatch(saveSnapshot())
     dispatch(startRuntime())
     const scene = expandedStageRef.current?.getScene() ?? stageRef.current?.getScene() ?? undefined
+    runtime.setSpeedMode(speedMode)
     runtime.start(sprites, programs, scene)
-  }, [sprites, selectedSpriteId, blockDataMap, dispatch])
+  }, [sprites, selectedSpriteId, blockDataMap, dispatch, speedMode])
 
   const handlePause = useCallback(() => {
     runtimeRef.current?.pause()
     dispatch(pauseRuntime())
   }, [dispatch])
+
+  const handleStep = useCallback(() => {
+    runtimeRef.current?.stepOnce()
+  }, [])
+
+  const handleSpeedChange = useCallback(() => {
+    const modes: SpeedMode[] = ["normal", "fast", "turbo"]
+    const next = modes[(modes.indexOf(speedMode) + 1) % modes.length]
+    setSpeedMode(next)
+    runtimeRef.current?.setSpeedMode(next)
+  }, [speedMode])
 
   const handleAddBlock = useCallback((defId: string) => {
     const controller = getController()
@@ -455,21 +586,28 @@ export function EditorContent() {
               selectedSpriteId && handleSetCollider(selectedSpriteId, collider)
             }
             onSaveCostume={handleSaveCostume}
+            onAddSound={(spriteId, sound) => dispatch(addSound({ spriteId, sound }))}
+            onDeleteSound={(spriteId, soundId) => dispatch(deleteSound({ spriteId, soundId }))}
             runtimeRef={runtimeRef}
             debugView={debugView}
           />
         ),
         stage: (
-          <PhaserStage
-            ref={stageRef}
-            sprites={sprites}
-            isRunning={isRunning}
-            selectedSpriteId={selectedSpriteId}
-            onSelectSprite={(id) => dispatch(selectSprite(id))}
-            onSpritePositionChange={(id, x, y) =>
-              dispatch(updateSprite({ id, changes: { x, y } }))
-            }
-          />
+          <div className="relative h-full">
+            <PhaserStage
+              ref={stageRef}
+              sprites={sprites}
+              isRunning={isRunning}
+              selectedSpriteId={selectedSpriteId}
+              onSelectSprite={(id) => dispatch(selectSprite(id))}
+              onSpritePositionChange={(id, x, y) =>
+                dispatch(updateSprite({ id, changes: { x, y } }))
+              }
+            />
+            {debugView && isRunning && (
+              <VariableMonitor runtimeRef={runtimeRef} />
+            )}
+          </div>
         ),
         sprites: (
           <SpriteList
@@ -487,6 +625,8 @@ export function EditorContent() {
             onSelectSprite={(id: string) => dispatch(selectSprite(id))}
             onAddSprite={() => dispatch(addSprite())}
             onDeleteSprite={(id: string) => setDeletingSpriteId(id)}
+            onDuplicateSprite={(id: string) => dispatch(duplicateSprite(id))}
+            onMoveSprite={(id, dir) => dispatch(moveSprite({ id, direction: dir }))}
           />
         ),
         inspector: (
@@ -497,9 +637,14 @@ export function EditorContent() {
               const oldName = changes.name !== undefined
                 ? sprites.find((s) => s.id === id)?.name
                 : undefined
-              console.log("[onUpdate]", { id, changes, oldName, willRename: !!(oldName && changes.name && oldName !== changes.name) })
               dispatch(updateSprite({ id, changes }))
               if (oldName && changes.name && oldName !== changes.name) {
+                dispatch(
+                  renameSpriteInBlockDataMap({
+                    oldName,
+                    newName: changes.name,
+                  })
+                )
                 getController().renameSpriteInBlocks(oldName, changes.name)
               }
             }}
@@ -507,6 +652,14 @@ export function EditorContent() {
           />
         ),
         debug: <DebugPanel runtimeRef={runtimeRef} />,
+        console: <ConsolePanel />,
+        samples: (
+          <SampleBrowser
+            currentSampleId={currentSampleId}
+            onLoadSample={handleLoadSample}
+          />
+        ),
+        assets: <AssetBrowser sprites={sprites} />,
       }
 
       const stageExpandButton = id === "stage" ? (
@@ -552,6 +705,16 @@ export function EditorContent() {
               <Button
                 variant="ghost"
                 size="icon-xs"
+                className={`size-5 ${!(isRunning && isPaused) ? "text-muted-foreground" : "text-blue-600 hover:text-blue-700"}`}
+                onClick={handleStep}
+                disabled={!(isRunning && isPaused)}
+                title="1フレーム進める"
+              >
+                <StepForward className="size-3" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon-xs"
                 className={`size-5 ${!isRunning ? "text-muted-foreground" : "text-red-600 hover:text-red-700"}`}
                 onClick={handleStop}
                 disabled={!isRunning}
@@ -560,6 +723,15 @@ export function EditorContent() {
                 <Square className="size-3" />
               </Button>
             </div>
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              className={`size-5 ml-1 ${speedMode === "turbo" ? "text-orange-500" : speedMode === "fast" ? "text-blue-500" : "text-muted-foreground"}`}
+              onClick={handleSpeedChange}
+              title={`速度: ${speedMode === "normal" ? "通常" : speedMode === "fast" ? "高速" : "ターボ"}`}
+            >
+              {speedMode === "turbo" ? <Zap className="size-3" /> : speedMode === "fast" ? <Rabbit className="size-3" /> : <Gauge className="size-3" />}
+            </Button>
             <div className="flex-1 text-center text-xs font-medium mosaic-window-title">{TILE_TITLES[id]}</div>
             {stageExpandButton}
           </div>
@@ -595,6 +767,7 @@ export function EditorContent() {
       isPaused,
       handleRun,
       handlePause,
+      handleStep,
       handleStop,
       debugView,
     ]
@@ -620,6 +793,11 @@ export function EditorContent() {
         visibleTiles={visibleTiles}
         onToggleTile={handleToggleTile}
         onResetLayout={handleResetLayout}
+        layoutPresets={Object.entries(LAYOUT_PRESETS).map(([id, p]) => ({ id, label: p.label }))}
+        onSelectPreset={(id) => {
+          const preset = LAYOUT_PRESETS[id]
+          if (preset) setMosaicLayout(preset.layout)
+        }}
         debugView={debugView}
         onToggleDebugView={() => setDebugView((v) => !v)}
         samples={sampleInfos}
@@ -699,20 +877,33 @@ export function EditorContent() {
                 <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor"><rect x="2" y="2" width="10" height="10" rx="1" /></svg>
               </button>
             </div>
-            {/* 閉じるボタン */}
-            <button
-              type="button"
-              className="absolute top-3 right-3 z-20 flex size-8 items-center justify-center rounded-lg bg-black/50 text-white hover:bg-black/70"
-              onClick={() => setStageExpanded(false)}
-            >
-              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                <line x1="2" y1="2" x2="12" y2="12" />
-                <line x1="12" y1="2" x2="2" y2="12" />
-              </svg>
-            </button>
+            {/* フルスクリーン・閉じるボタン */}
+            <div className="absolute top-3 right-3 z-20 flex items-center gap-1">
+              <button
+                type="button"
+                className="flex size-8 items-center justify-center rounded-lg bg-black/50 text-white hover:bg-black/70"
+                onClick={toggleFullscreen}
+                title={isFullscreen ? "フルスクリーン解除" : "フルスクリーン"}
+              >
+                {isFullscreen ? <Minimize2 className="size-4" /> : <Maximize2 className="size-4" />}
+              </button>
+              <button
+                type="button"
+                className="flex size-8 items-center justify-center rounded-lg bg-black/50 text-white hover:bg-black/70"
+                onClick={() => setStageExpanded(false)}
+              >
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                  <line x1="2" y1="2" x2="12" y2="12" />
+                  <line x1="12" y1="2" x2="2" y2="12" />
+                </svg>
+              </button>
+            </div>
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* ショートカット一覧ダイアログ */}
+      <ShortcutsDialog open={shortcutsOpen} onOpenChange={setShortcutsOpen} />
     </>
   )
 }
@@ -730,6 +921,8 @@ function WorkspaceWithTabs({
   onSelectCostume,
   onSetCollider,
   onSaveCostume,
+  onAddSound,
+  onDeleteSound,
   runtimeRef,
   debugView,
 }: {
@@ -743,6 +936,8 @@ function WorkspaceWithTabs({
   onSelectCostume: (index: number) => void
   onSetCollider: (collider: ColliderDef) => void
   onSaveCostume: (costumeId: string, dataUrl: string, width: number, height: number) => void
+  onAddSound: (spriteId: string, sound: import("@/features/editor/constants").SoundDef) => void
+  onDeleteSound: (spriteId: string, soundId: string) => void
   runtimeRef: RefObject<Runtime | null>
   debugView?: boolean
 }) {
@@ -779,6 +974,16 @@ function WorkspaceWithTabs({
           }`}
         >
           当たり判定
+        </button>
+        <button
+          onClick={() => onTabChange("sounds")}
+          className={`px-4 py-1.5 text-xs font-medium cursor-pointer transition-colors ${
+            editorTab === "sounds"
+              ? "border-b-2 border-[#CF63CF] text-[#CF63CF] bg-white"
+              : "text-gray-500 hover:text-gray-700"
+          }`}
+        >
+          サウンド
         </button>
       </div>
 
@@ -827,7 +1032,55 @@ function WorkspaceWithTabs({
               スプライトを選択してください
             </div>
           )}
+        <div className={editorTab === "sounds" ? "h-full" : "hidden h-full"}>
+          {selectedSprite ? (
+            <SoundEditor
+              sprite={selectedSprite}
+              onAddSound={onAddSound}
+              onDeleteSound={onDeleteSound}
+            />
+          ) : (
+            <div className="flex items-center justify-center h-full text-gray-400 text-sm">
+              スプライトを選択してください
+            </div>
+          )}
         </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── 変数モニター（ステージオーバーレイ） ─────────────
+
+function VariableMonitor({ runtimeRef }: { runtimeRef: RefObject<Runtime | null> }) {
+  const [vars, setVars] = useState<Array<[string, unknown]>>([])
+
+  useEffect(() => {
+    let rafId = 0
+    const update = () => {
+      const runtime = runtimeRef.current
+      if (runtime) {
+        const entries = Array.from(runtime.getVariables().entries())
+        setVars(entries)
+      }
+      rafId = requestAnimationFrame(update)
+    }
+    rafId = requestAnimationFrame(update)
+    return () => cancelAnimationFrame(rafId)
+  }, [runtimeRef])
+
+  if (vars.length === 0) return null
+
+  return (
+    <div className="absolute bottom-1 left-1 z-20 pointer-events-none">
+      <div className="bg-black/60 text-white text-[10px] font-mono rounded px-1.5 py-1 space-y-0.5 max-h-32 overflow-hidden">
+        {vars.map(([name, value]) => (
+          <div key={name} className="flex gap-1.5">
+            <span className="text-orange-300 shrink-0">{name}</span>
+            <span className="truncate max-w-24">{String(value)}</span>
+          </div>
+        ))}
       </div>
     </div>
   )

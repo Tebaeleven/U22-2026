@@ -43,6 +43,80 @@ export interface GameSceneProxy {
   showFloatingText(text: string, x: number, y: number): void
   /** スプライトを Tween で移動（Promise で完了通知） */
   tweenSprite(id: string, x: number, y: number, duration: number): Promise<void>
+  // ── カメラ ──
+  /** カメラをスプライトに追従させる */
+  cameraFollow(spriteId: string): void
+  /** カメラ追従を解除 */
+  cameraStopFollow(): void
+  /** カメラシェイク */
+  cameraShake(duration: number, intensity: number): void
+  /** カメラズーム */
+  cameraZoom(scale: number): void
+  /** カメラフェードアウト */
+  cameraFade(duration: number): Promise<void>
+  // ── Tween 拡張 ──
+  /** スプライトのスケールを Tween でアニメーション */
+  tweenSpriteScale(id: string, scale: number, duration: number): Promise<void>
+  /** スプライトの透明度を Tween でアニメーション */
+  tweenSpriteAlpha(id: string, alpha: number, duration: number): Promise<void>
+  /** スプライトの角度を Tween でアニメーション */
+  tweenSpriteAngle(id: string, angle: number, duration: number): Promise<void>
+  // ── 回転 ──
+  /** スプライトの描画回転角度を設定 */
+  setSpriteAngle(id: string, angle: number): void
+  // ── テキスト拡張 ──
+  /** ID付きテキストを任意位置に追加 */
+  addTextAt(spriteId: string, textId: string, text: string, x: number, y: number, size: number, color: string): void
+  /** ID付きテキストの内容を更新 */
+  updateTextAt(spriteId: string, textId: string, text: string): void
+  /** ID付きテキストを削除 */
+  removeTextAt(spriteId: string, textId: string): void
+  // ── パーティクル ──
+  /** ワールド座標にパーティクルを発射 */
+  emitParticles(x: number, y: number, count: number, color: number, speed: number): void
+  // ── シーン制御 ──
+  /** カメラ・テキスト等をリセット（実行開始時） */
+  resetEffects(): void
+  /** シーンを一時停止（物理・Tween含む） */
+  pauseScene(): void
+  /** シーンを再開 */
+  resumeScene(): void
+  // ── Phase 1-2: 物理プロパティ拡張 ──
+  /** 加速度設定 */
+  setSpriteAcceleration(id: string, ax: number, ay: number): void
+  /** 抗力設定 */
+  setSpriteDrag(id: string, dx: number, dy: number): void
+  /** ダンピング設定 */
+  setSpriteDamping(id: string, enabled: boolean): void
+  /** 最大速度設定 */
+  setSpriteMaxVelocity(id: string, vx: number, vy: number): void
+  /** 角速度設定 */
+  setSpriteAngularVelocity(id: string, deg: number): void
+  /** 不動体設定 */
+  setSpriteImmovable(id: string, enabled: boolean): void
+  /** 質量設定 */
+  setSpriteMass(id: string, mass: number): void
+  /** 押し出し可否設定 */
+  setSpritePushable(id: string, enabled: boolean): void
+  /** ワールドラップ */
+  worldWrap(id: string, padding: number): void
+  /** スプライトの速度の大きさを取得 */
+  getSpriteSpeed(id: string): number
+  /** ターゲットに向かって移動 */
+  moveToObject(id: string, targetX: number, targetY: number, speed: number): void
+  /** ターゲットに向かって加速 */
+  accelerateToObject(id: string, targetX: number, targetY: number, acceleration: number): void
+  /** 角度から速度を設定 */
+  velocityFromAngle(id: string, angle: number, speed: number): void
+  // ── Phase 3: 入力拡張 ──
+  /** マウスボタンが押されているか */
+  isMouseDown(): boolean
+  /** マウスホイールのデルタ値を取得 */
+  getMouseWheelDelta(): number
+  /** スプライトのドラッグを有効化 */
+  enableSpriteDrag(id: string): void
+  /** スプライトのドラッグ位置を取得 */
+  getSpriteDragPosition(id: string): { x: number; y: number } | null
 }
 
 export type BlockArgs = Record<string, unknown>
@@ -64,6 +138,8 @@ export interface BlockUtil {
   getSprite: () => SpriteRuntime
   /** 全スプライト取得 */
   getAllSprites: () => SpriteRuntime[]
+  /** 名前でスプライトを取得（O(1)） */
+  getSpriteByName: (name: string) => SpriteRuntime | undefined
   /** ステージ幅・高さ */
   stageWidth: number
   stageHeight: number
@@ -97,6 +173,15 @@ export interface BlockUtil {
   getCollisionTarget: () => string
   /** ゲームをリスタート */
   restartGame: () => void
+  /** 一時停止を考慮した現在時刻（Date.now() から一時停止中の累計時間を差し引いた値） */
+  now: () => number
+  // ── タイマー ──
+  /** 周期的にイベントを発火するインターバルを登録 */
+  addInterval: (eventName: string, ms: number) => void
+  /** インターバルを解除 */
+  removeInterval: (eventName: string) => void
+  /** 一定時間後にイベントを発火するタイムアウトを登録 */
+  addTimeout: (eventName: string, ms: number) => void
 }
 
 export type BlockFunction = (
@@ -152,6 +237,8 @@ export interface SpriteRuntime {
   size: number
   visible: boolean
   sayText: string
+  sayTextX: number
+  sayTextY: number
   sayTimer: number | null
   /** 現在のコスチュームインデックス */
   costumeIndex: number
@@ -179,4 +266,37 @@ export interface SpriteRuntime {
   tint: number | null
   /** 左右反転 */
   flipX: boolean
+  /** 描画回転角度（direction とは独立） */
+  angle: number
+  // ── Phase 1-2: 物理プロパティ拡張 ──
+  /** X方向加速度 (px/s²) */
+  accelerationX: number
+  /** Y方向加速度 (px/s²) */
+  accelerationY: number
+  /** X方向抗力 */
+  dragX: number
+  /** Y方向抗力 */
+  dragY: number
+  /** ダンピング方式の抗力を使用するか */
+  useDamping: boolean
+  /** X方向最大速度 */
+  maxVelocityX: number
+  /** Y方向最大速度 */
+  maxVelocityY: number
+  /** 角速度 (deg/s) */
+  angularVelocity: number
+  /** 不動体フラグ */
+  immovable: boolean
+  /** 質量 */
+  mass: number
+  /** 押し出し可能フラグ */
+  pushable: boolean
+  // ── Phase 3: 入力拡張 ──
+  /** マウスボタンが押されているか */
+  mouseDown: boolean
+  /** マウスホイールのデルタ値 */
+  mouseWheelDelta: number
+  // ── 内部フラグ ──
+  /** VM 側で velocity を変更したときに true にする（Phaser への書き戻しを制御） */
+  _velocityDirty: boolean
 }

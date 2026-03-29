@@ -41,6 +41,23 @@ function createRuntimeSprite(): SpriteRuntime {
     opacity: 100,
     tint: null,
     flipX: false,
+    sayTextX: 0,
+    sayTextY: 0,
+    angle: 0,
+    accelerationX: 0,
+    accelerationY: 0,
+    dragX: 0,
+    dragY: 0,
+    useDamping: false,
+    maxVelocityX: 10000,
+    maxVelocityY: 10000,
+    angularVelocity: 0,
+    immovable: false,
+    mass: 1,
+    pushable: true,
+    mouseDown: false,
+    mouseWheelDelta: 0,
+    _velocityDirty: false,
   }
 }
 
@@ -139,6 +156,7 @@ describe("buildScripts", () => {
     const callbacks: SequencerCallbacks = {
       getSprite: () => sprite,
       getAllSprites: () => [sprite],
+      getSpriteByName: () => undefined,
       getVariable: () => undefined,
       setVariable: () => undefined,
       sendEvent: () => undefined,
@@ -155,6 +173,10 @@ describe("buildScripts", () => {
       deleteClone: () => undefined,
       registerCollisionCallback: () => undefined,
       restartGame: () => undefined,
+      now: () => Date.now(),
+      addInterval: () => undefined,
+      removeInterval: () => undefined,
+      addTimeout: () => undefined,
     }
 
     const sequencer = new Sequencer(callbacks)

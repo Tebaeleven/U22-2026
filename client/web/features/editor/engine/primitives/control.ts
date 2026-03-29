@@ -19,11 +19,11 @@ export function control_wait(args: BlockArgs, util: BlockUtil) {
   const frame = util.stackFrame
 
   if (frame.startTime === undefined) {
-    frame.startTime = Date.now()
+    frame.startTime = util.now()
     frame.duration = secs * 1000
   }
 
-  const elapsed = Date.now() - (frame.startTime as number)
+  const elapsed = util.now() - (frame.startTime as number)
   if (elapsed < (frame.duration as number)) {
     util.yield()
   }

@@ -440,7 +440,7 @@ export function BlockPalette({
         ))}
       </div>
 
-      <ScrollArea className="flex-1">
+      <ScrollArea className="flex-1 min-h-0">
         <div className="flex flex-col gap-1.5 p-2">
           {/* 変数カテゴリ: 作成ボタン + 一覧 */}
           {selectedCategory === "variables" && (
@@ -481,12 +481,13 @@ export function BlockPalette({
           )}
 
           {filteredBlocks.map((def) => (
-            <PaletteBlock
-              key={def.id}
-              def={def}
-              onAdd={handleAdd}
-              onEditRequest={handleEditRequest}
-            />
+            <div key={def.id} title={def.description}>
+              <PaletteBlock
+                def={def}
+                onAdd={handleAdd}
+                onEditRequest={handleEditRequest}
+              />
+            </div>
           ))}
           {filteredBlocks.length === 0 && selectedCategory !== "variables" && selectedCategory !== "myblocks" && (
             <div className="text-xs text-muted-foreground text-center py-4">

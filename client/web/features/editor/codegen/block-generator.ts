@@ -26,7 +26,9 @@ const FUNC_TO_OPCODE: Record<string, string> = {
   // motion
   move: "motion_movesteps",
   turnRight: "motion_turnright",
+  turnLeft: "motion_turnleft",
   goto: "motion_gotoxy",
+  setPosition: "motion_gotoxy",
   glide: "motion_glidesecstoxy",
   tweenTo: "motion_tweento",
   setX: "motion_setx",
@@ -34,6 +36,7 @@ const FUNC_TO_OPCODE: Record<string, string> = {
   changeXBy: "motion_changexby",
   changeYBy: "motion_changeyby",
   ifOnEdgeBounce: "motion_ifonedgebounce",
+  setAngle: "motion_setangle",
   // physics
   setVelocityX: "physics_setvelocityX",
   setVelocityY: "physics_setvelocityY",
@@ -46,6 +49,21 @@ const FUNC_TO_OPCODE: Record<string, string> = {
   disableBody: "physics_disablebody",
   enableBody: "physics_enablebody",
   onCollide: "physics_oncollide",
+  // Phase 1-2: 物理プロパティ拡張
+  setAcceleration: "physics_setacceleration",
+  setAccelerationX: "physics_setaccelerationx",
+  setAccelerationY: "physics_setaccelerationy",
+  setDrag: "physics_setdrag",
+  setDamping: "physics_setdamping",
+  setMaxVelocity: "physics_setmaxvelocity",
+  setAngularVelocity: "physics_setangularvelocity",
+  setImmovable: "physics_setimmovable",
+  setMass: "physics_setmass",
+  setPushable: "physics_setpushable",
+  worldWrap: "physics_worldwrap",
+  moveTo: "physics_moveto",
+  accelerateTo: "physics_accelerateto",
+  velocityFromAngle: "physics_velocityfromangle",
   // looks
   show: "looks_show",
   hide: "looks_hide",
@@ -62,6 +80,16 @@ const FUNC_TO_OPCODE: Record<string, string> = {
   setText: "looks_updatetext",
   removeText: "looks_removetext",
   floatingText: "looks_floatingtext",
+  // tween 拡張
+  tweenScale: "tween_scale",
+  tweenAlpha: "tween_alpha",
+  tweenAngle: "tween_angle",
+  // テキスト拡張
+  addTextAt: "text_addat",
+  updateTextAt: "text_updateat",
+  removeTextAt: "text_removeat",
+  // パーティクル
+  emitParticles: "particle_emit",
   // graphics
   "graphics.fillRect": "graphics_fillrect",
   "graphics.clear": "graphics_clear",
@@ -70,6 +98,10 @@ const FUNC_TO_OPCODE: Record<string, string> = {
   waitUntil: "control_wait_until",
   stop: "control_stop",
   restart: "control_restart",
+  // タイマー
+  setInterval: "timer_setinterval",
+  clearInterval: "timer_clearinterval",
+  setTimeout: "timer_settimeout",
   // clone
   createClone: "clone_create",
   deleteClone: "clone_delete",
@@ -79,10 +111,44 @@ const FUNC_TO_OPCODE: Record<string, string> = {
   // sensing (ブーリアン/レポーター)
   touching: "sensing_touchingobject",
   isKeyPressed: "sensing_keypressed",
+  isKeyJustDown: "sensing_keyjustdown",
   isOnGround: "physics_onground",
+  // Phase 3: 入力拡張
+  enableDrag: "sensing_enabledrag",
+  // Phase 4: アニメーション拡張
+  createAnim: "anim_create",
+  playAnim: "anim_play",
+  stopAnim: "anim_stop",
+  onAnimComplete: "anim_oncomplete",
+  // Phase 5: オーディオ
+  playSound: "sound_play",
+  playSoundLoop: "sound_playloop",
+  stopSound: "sound_stop",
+  setSoundVolume: "sound_setvolume",
+  // カメラ
+  cameraFollow: "camera_follow",
+  cameraStopFollow: "camera_stopfollow",
+  cameraShake: "camera_shake",
+  cameraZoom: "camera_zoom",
+  cameraFade: "camera_fade",
+  // 数学（関数呼び出し型）
+  angleTo: "math_angleto",
+  distanceTo: "math_distanceto",
+  // variables (表示)
+  showVariable: "data_showvariable",
+  hideVariable: "data_hidevariable",
   // operators
   join: "operator_join",
+  random: "operator_random",
+  round: "operator_round",
   resetTimer: "sensing_resettimer",
+  // 数学（グローバル関数型）
+  randomInt: "math_randomint",
+  abs: "math_abs",
+  min: "math_min",
+  max: "math_max",
+  sin: "math_sin",
+  cos: "math_cos",
   // procedures
   "return": "procedures_return",
 }
@@ -93,10 +159,16 @@ const REPORTER_MAP: Record<string, string> = {
   x: "motion_xposition",
   y: "motion_yposition",
   direction: "motion_direction",
+  angle: "motion_angle",
   mouseX: "sensing_mousex",
   mouseY: "sensing_mousey",
   timer: "sensing_timer",
   costumeNumber: "looks_costumenumber",
+  velocityX: "physics_velocityX",
+  velocityY: "physics_velocityY",
+  physicsSpeed: "physics_speed",
+  mouseDown: "sensing_mousedown",
+  mouseWheel: "sensing_mousewheel",
   collisionTarget: "physics_collisiontarget",
   newValue: "observer_newvalue",
   oldValue: "observer_oldvalue",
@@ -471,7 +543,11 @@ class BlockGenerator {
   // ── 関数呼び出し式（レポーター/ブーリアン） ──
 
   private generateCallExpr(name: string, args: ExprNode[]): string {
-    const opcode = FUNC_TO_OPCODE[name]
+    let opcode = FUNC_TO_OPCODE[name]
+    // 引数なし関数はレポーターマップにフォールバック
+    if (!opcode && args.length === 0) {
+      opcode = REPORTER_MAP[name]
+    }
     if (!opcode) {
       throw new Error(`Unknown function in expression: ${name}`)
     }

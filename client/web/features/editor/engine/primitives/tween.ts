@@ -1,0 +1,73 @@
+import type { BlockArgs, BlockUtil } from "../types"
+
+/** スケールを Tween でアニメーション */
+export function tween_scale(args: BlockArgs, util: BlockUtil) {
+  const scale = Number(args.SCALE ?? 1)
+  const secs = Number(args.SECS ?? 1)
+  const sprite = util.getSprite()
+  const scene = util.getScene()
+  const frame = util.stackFrame
+
+  if (!frame.tweenStarted) {
+    frame.tweenStarted = true
+    if (scene) {
+      scene.tweenSpriteScale(sprite.id, scale, secs * 1000).then(() => {
+        frame.tweenDone = true
+      })
+    } else {
+      frame.tweenDone = true
+    }
+  }
+
+  if (!frame.tweenDone) {
+    util.yield()
+  }
+}
+
+/** 透明度を Tween でアニメーション */
+export function tween_alpha(args: BlockArgs, util: BlockUtil) {
+  const alpha = Number(args.ALPHA ?? 1)
+  const secs = Number(args.SECS ?? 1)
+  const sprite = util.getSprite()
+  const scene = util.getScene()
+  const frame = util.stackFrame
+
+  if (!frame.tweenStarted) {
+    frame.tweenStarted = true
+    if (scene) {
+      scene.tweenSpriteAlpha(sprite.id, alpha, secs * 1000).then(() => {
+        frame.tweenDone = true
+      })
+    } else {
+      frame.tweenDone = true
+    }
+  }
+
+  if (!frame.tweenDone) {
+    util.yield()
+  }
+}
+
+/** 角度を Tween でアニメーション */
+export function tween_angle(args: BlockArgs, util: BlockUtil) {
+  const angle = Number(args.ANGLE ?? 0)
+  const secs = Number(args.SECS ?? 1)
+  const sprite = util.getSprite()
+  const scene = util.getScene()
+  const frame = util.stackFrame
+
+  if (!frame.tweenStarted) {
+    frame.tweenStarted = true
+    if (scene) {
+      scene.tweenSpriteAngle(sprite.id, angle, secs * 1000).then(() => {
+        frame.tweenDone = true
+      })
+    } else {
+      frame.tweenDone = true
+    }
+  }
+
+  if (!frame.tweenDone) {
+    util.yield()
+  }
+}

@@ -8,6 +8,7 @@ import {
   useSyncExternalStore,
   type MouseEvent as ReactMouseEvent,
 } from "react"
+import { createPortal } from "react-dom"
 import {
   Workspace,
   SvgRenderer,
@@ -15,7 +16,7 @@ import {
   type Container,
   type Connector,
 } from "headless-vpl"
-import { DomSyncHelper, bindWheelZoom } from "headless-vpl/helpers"
+import { DomSyncHelper } from "headless-vpl/helpers"
 import { InteractionManager, bindDefaultShortcuts } from "headless-vpl/recipes"
 import { getMouseState } from "headless-vpl/util/mouse"
 import {
@@ -44,6 +45,7 @@ import {
   ReporterPreviewPopover,
   type ReporterPreviewState,
 } from "./reporter-preview-popover"
+import { BlockSearchPopover } from "./block-search-popover"
 
 const controller = new BlockEditorController()
 let sharedWorkspace: Workspace | null = null
@@ -110,8 +112,10 @@ export function BlockWorkspace({
   const canvasRef = useRef<HTMLDivElement>(null)
 
   const [contextMenu, setContextMenu] = useState<BlockContextMenuState>(null)
+  const [bgContextMenu, setBgContextMenu] = useState<{ x: number; y: number } | null>(null)
   const [editorState, setEditorState] = useState<ProcedureEditorState>(null)
   const [previewState, setPreviewState] = useState<ReporterPreviewState>(null)
+  const [blockSearch, setBlockSearch] = useState<{ x: number; y: number } | null>(null)
 
   // パレット等から参照できるよう setter をモジュールレベルで共有
   useEffect(() => {
@@ -401,6 +405,7 @@ export function BlockWorkspace({
       containers: () => containersRef.current,
       connectors: () => connectorsRef.current,
       gridSize: 24,
+      emptyClickIntent: "pan",
       onModeChange: (mode) => {
         if (mode === "dragging" || mode === "panning") {
           canvasElement.style.cursor = "grabbing"
@@ -475,18 +480,42 @@ export function BlockWorkspace({
         })
       } else {
         setContextMenu(null)
+        setBgContextMenu({ x: event.clientX, y: event.clientY })
       }
     }
     canvasElement.addEventListener("contextmenu", handleContextMenu)
 
-    const handleWheel = () => {
+    const ZOOM_MIN = 0.1
+    const ZOOM_MAX = 5
+    const ZOOM_SENSITIVITY = 0.005
+    const handleWheel = (e: WheelEvent) => {
+      e.preventDefault()
       setContextMenu(null)
       setEditorState(null)
       setPreviewState(null)
-    }
-    canvasElement.addEventListener("wheel", handleWheel, { passive: true })
 
-    const cleanupZoom = bindWheelZoom(canvasElement, { workspace })
+      if (e.ctrlKey) {
+        // ピンチズーム（トラックパッド）/ Ctrl+ホイール
+        const rect = canvasElement.getBoundingClientRect()
+        const factor = Math.exp(-e.deltaY * ZOOM_SENSITIVITY)
+        const newScale = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, workspace.viewport.scale * factor))
+        workspace.zoomAt(e.clientX - rect.left, e.clientY - rect.top, newScale)
+      } else {
+        // 通常スクロール（パン）
+        workspace.panBy(-e.deltaX, -e.deltaY)
+      }
+    }
+    canvasElement.addEventListener("wheel", handleWheel, { passive: false })
+
+    // ── Ctrl+Space でブロック検索ポップオーバーを開く ──
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.ctrlKey && e.code === "Space") {
+        e.preventDefault()
+        const rect = canvasElement.getBoundingClientRect()
+        setBlockSearch({ x: rect.width / 2, y: rect.height / 3 })
+      }
+    }
+    canvasElement.addEventListener("keydown", handleKeyDown)
 
     // ── フォーム要素のオクルージョン制御 ──
     // select/input がより高い z-index のブロックに覆われている場合、
@@ -575,10 +604,10 @@ export function BlockWorkspace({
       keyboardRef.current?.destroy()
       keyboardRef.current = null
       interaction.destroy()
-      cleanupZoom()
       canvasElement.removeEventListener("mousedown", preventMiddleMouse)
       canvasElement.removeEventListener("contextmenu", handleContextMenu)
       canvasElement.removeEventListener("wheel", handleWheel)
+      canvasElement.removeEventListener("keydown", handleKeyDown)
       overlayElement.removeEventListener("pointermove", handleFormOcclusion, true)
       overlayElement.removeEventListener("mousedown", preventOccludedFormClick, true)
       interactionRef.current = null
@@ -637,6 +666,10 @@ export function BlockWorkspace({
       // SvgRenderer を生成（デバッグ用 SVG に描画）
       new SvgRenderer(debugSvg, workspace)
 
+      // 現在のビューポート位置を SvgRenderer に同期
+      workspace.eventBus.emit("pan", workspace.viewport)
+      workspace.eventBus.emit("zoom", workspace.viewport)
+
       // 既存の全要素を再描画させるため workspace の要素を再通知
       for (const el of workspace.elements) {
         workspace.eventBus.emit("add", el)
@@ -661,7 +694,8 @@ export function BlockWorkspace({
   return (
     <div
       ref={canvasRef}
-      className="vpl-canvas"
+      tabIndex={0}
+      className="vpl-canvas outline-none"
       style={{
         backgroundColor: "#ffffff",
         backgroundImage:
@@ -674,7 +708,7 @@ export function BlockWorkspace({
       }}
     >
       <svg ref={svgRef} />
-      <div ref={overlayRef} className="dom-overlay" style={debugView ? { visibility: "hidden" } : undefined}>
+      <div ref={overlayRef} className="dom-overlay" style={debugView ? { opacity: 0, pointerEvents: "none" } : undefined}>
         {snapshot.blocks.map((block, index) => (
           <BlockView
             key={block.id}
@@ -695,10 +729,37 @@ export function BlockWorkspace({
         ))}
       </div>
 
+      {/* 背景コンテキストメニュー */}
+      {bgContextMenu && createPortal(
+        <div
+          className="fixed inset-0 z-[9999]"
+          onClick={() => setBgContextMenu(null)}
+          onContextMenu={(e) => { e.preventDefault(); setBgContextMenu(null) }}
+        >
+          <div
+            className="absolute min-w-36 rounded-lg bg-popover p-1 text-popover-foreground shadow-md ring-1 ring-foreground/10 animate-in fade-in-0 zoom-in-95"
+            style={{ left: bgContextMenu.x, top: bgContextMenu.y }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              className="flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-sm outline-hidden select-none hover:bg-accent hover:text-accent-foreground"
+              onClick={() => { controller.cleanupBlocks(); setBgContextMenu(null) }}
+            >
+              ブロックを整頓
+            </button>
+          </div>
+        </div>,
+        document.body
+      )}
+
       <BlockContextMenu
         state={contextMenu}
         onClose={() => setContextMenu(null)}
         onDelete={(id) => controller.deleteBlock(id)}
+        onDeleteChain={(id) => {
+          const chainIds = controller.getChainIds(id)
+          for (const cid of chainIds) controller.deleteBlock(cid)
+        }}
         onDuplicate={(id) => controller.duplicateBlock(id)}
         onEdit={contextMenu?.procedureId ? (blockId) => {
           const procedureId = contextMenu.procedureId!
@@ -744,6 +805,114 @@ export function BlockWorkspace({
         state={previewState}
         onClose={() => setPreviewState(null)}
       />
+
+      <BlockSearchPopover
+        open={!!blockSearch}
+        position={blockSearch ?? { x: 0, y: 0 }}
+        onSelect={(defId) => {
+          const ws = workspaceRef.current
+          if (ws) {
+            const vp = ws.viewport
+            const centerX = -vp.x / vp.scale + 300 / vp.scale
+            const centerY = -vp.y / vp.scale + 200 / vp.scale
+            controller.addBlock(defId, centerX, centerY)
+          }
+          setBlockSearch(null)
+        }}
+        onClose={() => setBlockSearch(null)}
+      />
+
+      {/* ミニマップ */}
+      <Minimap containers={containersRef} workspace={workspaceRef} canvasRef={canvasRef} />
     </div>
+  )
+}
+
+// ─── ミニマップ ─────────────────────────────────
+
+const MINIMAP_W = 120
+const MINIMAP_H = 80
+
+function Minimap({
+  containers,
+  workspace,
+  canvasRef,
+}: {
+  containers: React.RefObject<Container[]>
+  workspace: React.RefObject<Workspace | null>
+  canvasRef: React.RefObject<HTMLDivElement | null>
+}) {
+  const ref = useRef<HTMLCanvasElement>(null)
+
+  useEffect(() => {
+    let rafId = 0
+    const draw = () => {
+      const canvas = ref.current
+      const ws = workspace.current
+      const items = containers.current
+      if (!canvas || !ws || !items || items.length === 0) {
+        rafId = requestAnimationFrame(draw)
+        return
+      }
+
+      const ctx = canvas.getContext("2d")
+      if (!ctx) { rafId = requestAnimationFrame(draw); return }
+
+      // ブロック全体のバウンディングボックスを計算
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+      for (const c of items) {
+        const pos = c.position
+        minX = Math.min(minX, pos.x)
+        minY = Math.min(minY, pos.y)
+        maxX = Math.max(maxX, pos.x + c.width)
+        maxY = Math.max(maxY, pos.y + c.height)
+      }
+
+      const worldW = maxX - minX + 100
+      const worldH = maxY - minY + 100
+      const scale = Math.min(MINIMAP_W / worldW, MINIMAP_H / worldH)
+
+      ctx.clearRect(0, 0, MINIMAP_W, MINIMAP_H)
+      ctx.fillStyle = "rgba(255,255,255,0.85)"
+      ctx.fillRect(0, 0, MINIMAP_W, MINIMAP_H)
+
+      // ブロックを描画
+      for (const c of items) {
+        const pos = c.position
+        const x = (pos.x - minX + 50) * scale
+        const y = (pos.y - minY + 50) * scale
+        const w = Math.max(c.width * scale, 2)
+        const h = Math.max(c.height * scale, 1)
+        ctx.fillStyle = c.color ?? "#4C97FF"
+        ctx.fillRect(x, y, w, h)
+      }
+
+      // ビューポート領域を描画
+      const canvasEl = canvasRef.current
+      if (canvasEl) {
+        const vp = ws.viewport
+        const vpX = (-vp.x / vp.scale - minX + 50) * scale
+        const vpY = (-vp.y / vp.scale - minY + 50) * scale
+        const vpW = (canvasEl.clientWidth / vp.scale) * scale
+        const vpH = (canvasEl.clientHeight / vp.scale) * scale
+        ctx.strokeStyle = "rgba(59, 130, 246, 0.6)"
+        ctx.lineWidth = 1
+        ctx.strokeRect(vpX, vpY, vpW, vpH)
+      }
+
+      rafId = requestAnimationFrame(draw)
+    }
+    rafId = requestAnimationFrame(draw)
+    return () => cancelAnimationFrame(rafId)
+  }, [containers, workspace, canvasRef])
+
+  return (
+    <canvas
+      ref={ref}
+      width={MINIMAP_W}
+      height={MINIMAP_H}
+      className="absolute bottom-2 right-2 rounded border border-zinc-200 shadow-sm pointer-events-none"
+      style={{ width: MINIMAP_W, height: MINIMAP_H }}
+    />
   )
 }

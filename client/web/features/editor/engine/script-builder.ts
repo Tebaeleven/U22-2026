@@ -209,6 +209,61 @@ function getArgName(
     event_whentouched: ["TARGET"],
     motion_tweento: ["X", "Y", "SECS"],
     procedures_return: ["VALUE"],
+    // 回転
+    motion_setangle: ["ANGLE"],
+    // カメラ
+    camera_shake: ["DURATION", "INTENSITY"],
+    camera_zoom: ["SCALE"],
+    camera_fade: ["DURATION"],
+    // Tween
+    tween_scale: ["SCALE", "SECS"],
+    tween_alpha: ["ALPHA", "SECS"],
+    tween_angle: ["ANGLE", "SECS"],
+    // 数学
+    math_randomint: ["FROM", "TO"],
+    math_angleto: ["TARGET"],
+    math_distanceto: ["TARGET"],
+    math_abs: ["NUM"],
+    math_min: ["A", "B"],
+    math_max: ["A", "B"],
+    math_sin: ["DEG"],
+    math_cos: ["DEG"],
+    // タイマー
+    timer_setinterval: ["EVENT", "MS"],
+    timer_clearinterval: ["EVENT"],
+    timer_settimeout: ["EVENT", "MS"],
+    // テキスト拡張
+    text_addat: ["ID", "TEXT", "X", "Y", "SIZE", "COLOR"],
+    text_updateat: ["ID", "TEXT"],
+    text_removeat: ["ID"],
+    // パーティクル
+    particle_emit: ["X", "Y", "COUNT", "COLOR", "SPEED"],
+    // Phase 1-2: 物理プロパティ拡張
+    physics_setacceleration: ["AX", "AY"],
+    physics_setaccelerationx: ["AX"],
+    physics_setaccelerationy: ["AY"],
+    physics_setdrag: ["DX", "DY"],
+    physics_setdamping: ["ENABLED"],
+    physics_setmaxvelocity: ["VX", "VY"],
+    physics_setangularvelocity: ["DEG"],
+    physics_setimmovable: ["ENABLED"],
+    physics_setmass: ["MASS"],
+    physics_setpushable: ["ENABLED"],
+    physics_worldwrap: ["PADDING"],
+    physics_moveto: ["TARGET", "SPEED"],
+    physics_accelerateto: ["TARGET", "SPEED"],
+    physics_velocityfromangle: ["ANGLE", "SPEED"],
+    // Phase 3: 入力拡張
+    sensing_keyjustdown: ["KEY_OPTION"],
+    // Phase 4: アニメーション拡張
+    anim_create: ["NAME", "START", "END", "RATE", "LOOP"],
+    anim_play: ["NAME"],
+    anim_oncomplete: ["EVENT"],
+    // Phase 5: オーディオ
+    sound_play: ["SOUND"],
+    sound_playloop: ["SOUND"],
+    sound_stop: ["SOUND"],
+    sound_setvolume: ["SOUND", "VOL"],
   }
 
   const map = argMaps[opcode]

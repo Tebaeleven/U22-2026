@@ -18,10 +18,10 @@ export const INLINE_SLOT_BASE_H = 24
 export const INLINE_HEIGHT_PADDING = 8
 export const BOOLEAN_SLOT_W = 36
 export const BOOLEAN_CONNECTOR_HIT_RADIUS = 12
-export const HAT_REPORTER_CHIP_MIN_W = 72
+export const HAT_REPORTER_CHIP_MIN_W = 48
 export const INPUT_MIN_W = 40
-export const INPUT_TEXT_MIN_W = 64
-export const INPUT_DROPDOWN_MIN_W = 80
+export const INPUT_TEXT_MIN_W = 48
+export const INPUT_DROPDOWN_MIN_W = 56
 export const INPUT_MAX_W = 180
 export const INLINE_REPORTER_INPUT_MIN_W = 28
 export const INLINE_REPORTER_INPUT_MAX_W = 84
@@ -56,11 +56,11 @@ export const SHAPE_CONFIGS: Record<BlockShape, ShapeConfig> = {
     bodies: [{ minHeight: C_BODY_MIN_H }],
   },
   reporter: {
-    size: { w: 140, h: 32 },
+    size: { w: 60, h: 32 },
     connectors: { top: false, bottom: false, value: true },
   },
   boolean: {
-    size: { w: 140, h: 32 },
+    size: { w: 60, h: 32 },
     connectors: { top: false, bottom: false, value: true },
   },
 }

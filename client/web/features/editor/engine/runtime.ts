@@ -49,8 +49,28 @@ export class Runtime {
   private collisionCallbacks: Map<string, Array<{ targetName: string; eventName: string }>> = new Map()
   // --- event_whentouched の接触状態追跡 ---
   private touchingState: Map<string, Set<string>> = new Map()
+  // --- タイマー管理 ---
+  private intervals: Map<string, { eventName: string; ms: number; elapsed: number }> = new Map()
+  private timeouts: Map<string, { eventName: string; ms: number; elapsed: number }> = new Map()
+  private lastTickTime = 0
+  // --- 一時停止の累計時間 ---
+  private pausedAt = 0
+  private totalPausedDuration = 0
   // --- リスタート要求 ---
   private restartRequested = false
+  // --- パフォーマンス最適化用キャッシュ ---
+  private spriteArrayCache: SpriteRuntime[] | null = null
+  private spriteNameIndex: Map<string, SpriteRuntime[]> = new Map()
+  private _hasWaitingScripts = false
+
+  /** 実行速度モードを設定 */
+  setSpeedMode(mode: "normal" | "fast" | "turbo") {
+    this.sequencer.speedMode = mode
+  }
+
+  getSpeedMode(): "normal" | "fast" | "turbo" {
+    return this.sequencer.speedMode
+  }
 
   /** 外部コールバック: スプライト状態が更新された時 */
   onSpritesUpdate: ((sprites: SpriteRuntime[]) => void) | null = null
@@ -62,7 +82,8 @@ export class Runtime {
   constructor() {
     this.sequencer = new Sequencer({
       getSprite: (id) => this.sprites.get(id),
-      getAllSprites: () => Array.from(this.sprites.values()),
+      getAllSprites: () => this.getSpriteArray(),
+      getSpriteByName: (name) => this.getSpriteByName(name),
       getVariable: (name) => this.getVariable(name),
       setVariable: (name, value) => this.setVariable(name, value),
       sendEvent: (name, data) => this.emitEvent(name, data),
@@ -81,6 +102,10 @@ export class Runtime {
         this.registerCollisionCallback(spriteId, targetName, eventName)
       },
       restartGame: () => this.requestRestart(),
+      now: () => this.now(),
+      addInterval: (spriteId, eventName, ms) => this.addInterval(spriteId, eventName, ms),
+      removeInterval: (spriteId, eventName) => this.removeInterval(spriteId, eventName),
+      addTimeout: (spriteId, eventName, ms) => this.addTimeout(spriteId, eventName, ms),
     })
   }
 
@@ -98,8 +123,11 @@ export class Runtime {
 
     this.reporterPreviewCache.clear()
     this.scene = scene ?? null
+    this.scene?.resetEffects()
     this.spriteDefs = spriteDefs
     this.cloneCounter = 0
+    this.totalPausedDuration = 0
+    this.pausedAt = 0
     this.collisionCallbacks.clear()
 
     // 全スプライトのプロシージャをマージ
@@ -119,6 +147,8 @@ export class Runtime {
         size: def.size,
         visible: def.visible,
         sayText: "",
+        sayTextX: 0,
+        sayTextY: 0,
         sayTimer: null,
         costumeIndex: def.currentCostumeIndex,
         costumeCount: def.costumes.length,
@@ -132,6 +162,21 @@ export class Runtime {
         opacity: 100,
         tint: null,
         flipX: false,
+        angle: 0,
+        accelerationX: 0,
+        accelerationY: 0,
+        dragX: 0,
+        dragY: 0,
+        useDamping: false,
+        maxVelocityX: 10000,
+        maxVelocityY: 10000,
+        angularVelocity: 0,
+        immovable: false,
+        mass: 1,
+        pushable: true,
+        mouseDown: false,
+        mouseWheelDelta: 0,
+        _velocityDirty: false,
       })
     }
 
@@ -184,6 +229,8 @@ export class Runtime {
       document.addEventListener("keyup", keyupHandler)
     }
 
+    this.invalidateSpriteCache()
+    this.recomputeHasWaitingScripts()
     this.running = true
     this.tick()
   }
@@ -209,6 +256,9 @@ export class Runtime {
     this.collisionCallbacks.clear()
     this.touchingState.clear()
     this.restartRequested = false
+    this.spriteArrayCache = null
+    this.spriteNameIndex.clear()
+    this._hasWaitingScripts = false
 
     if (this.keydownHandler && typeof document !== "undefined") {
       document.removeEventListener("keydown", this.keydownHandler)
@@ -223,16 +273,86 @@ export class Runtime {
   pause() {
     if (!this.running || this.paused) return
     this.paused = true
+    this.pausedAt = Date.now()
     if (this.rafId) {
       cancelAnimationFrame(this.rafId)
       this.rafId = 0
     }
+    this.scene?.pauseScene()
   }
 
   resume() {
     if (!this.running || !this.paused) return
+    this.totalPausedDuration += Date.now() - this.pausedAt
     this.paused = false
+    this.lastTickTime = 0
+    this.scene?.resumeScene()
     this.tick()
+  }
+
+  /** 一時停止中に1フレームだけ実行する（ステップ実行） */
+  stepOnce() {
+    if (!this.running || !this.paused) return
+
+    this.paused = false
+    this.inTick = true
+
+    // 物理位置の同期
+    if (this.scene) {
+      const physPositions = this.scene.readPhysicsPositions()
+      for (const p of physPositions) {
+        const sprite = this.sprites.get(p.id)
+        if (sprite && sprite.physicsMode === "dynamic") {
+          sprite.x = p.x
+          sprite.y = p.y
+          sprite.velocityX = p.vx
+          sprite.velocityY = p.vy
+        }
+      }
+    }
+
+    this.threads = this.sequencer.stepThreads(this.threads)
+
+    this.checkCollisionCallbacks()
+    this.checkTouchEvents()
+
+    if (this.scene) {
+      for (const sprite of this.sprites.values()) {
+        if (sprite.physicsMode === "dynamic" && sprite._velocityDirty) {
+          this.scene.setSpriteVelocity(sprite.id, sprite.velocityX, sprite.velocityY)
+          sprite._velocityDirty = false
+        }
+      }
+    }
+
+    this.updateTimers()
+    this.onSpritesUpdate?.(this.getSpriteStates())
+
+    // 全スレッド完了チェック
+    if (this.threads.length === 0 && !this._hasWaitingScripts) {
+      this.running = false
+      this.inTick = false
+      this.onStop?.()
+      return
+    }
+
+    if (this.restartRequested) {
+      this.restartRequested = false
+      this.inTick = false
+      this.onRestart?.()
+      return
+    }
+
+    this.inTick = false
+    this.paused = true
+  }
+
+  /** 一時停止を考慮した現在時刻を返す */
+  now(): number {
+    if (this.paused) {
+      return this.pausedAt - this.totalPausedDuration
+    }
+    return Date.now() - this.totalPausedDuration
   }
 
   get isRunning(): boolean {
@@ -245,7 +365,7 @@ export class Runtime {
 
   /** スプライトの現在の状態を取得 */
   getSpriteStates(): SpriteRuntime[] {
-    return Array.from(this.sprites.values())
+    return [...this.getSpriteArray()]
   }
 
   /** デバッグ用: スレッド情報を取得 */
@@ -323,6 +443,45 @@ export class Runtime {
     this.ensureTickRunning()
   }
 
+  /** スプライトキャッシュを無効化し、名前インデックスを再構築 */
+  private invalidateSpriteCache() {
+    this.spriteArrayCache = null
+    this.spriteNameIndex.clear()
+    for (const sprite of this.sprites.values()) {
+      const list = this.spriteNameIndex.get(sprite.name)
+      if (list) {
+        list.push(sprite)
+      } else {
+        this.spriteNameIndex.set(sprite.name, [sprite])
+      }
+    }
+  }
+
+  /** キャッシュ済みのスプライト配列を返す */
+  private getSpriteArray(): SpriteRuntime[] {
+    if (!this.spriteArrayCache) {
+      this.spriteArrayCache = Array.from(this.sprites.values())
+    }
+    return this.spriteArrayCache
+  }
+
+  /** 名前からスプライトを取得（O(1)） */
+  private getSpriteByName(name: string): SpriteRuntime | undefined {
+    return this.spriteNameIndex.get(name)?.[0]
+  }
+
+  /** hasWaitingScripts を再計算 */
+  private recomputeHasWaitingScripts() {
+    this._hasWaitingScripts = this.scripts.some(
+      (s) =>
+        s.opcode === "event_whenkeypressed" ||
+        s.opcode === "observer_whenvarchanges" ||
+        s.opcode === "observer_wheneventreceived" ||
+        s.opcode === "clone_whencloned" ||
+        s.opcode === "event_whentouched"
+    )
+  }
+
   /** キーが現在押されているか（sensing_keypressed 用） */
   isKeyPressed(key: string): boolean {
     if (key === "any") return this.pressedKeys.size > 0
@@ -346,7 +505,13 @@ export class Runtime {
       }
     }
 
-    this.threads = this.sequencer.stepThreads(this.threads)
+    // 速度モードに応じて1フレームあたりの実行回数を変える
+    const stepsPerFrame = this.sequencer.speedMode === "turbo" ? 10
+      : this.sequencer.speedMode === "fast" ? 3 : 1
+    for (let i = 0; i < stepsPerFrame; i++) {
+      this.threads = this.sequencer.stepThreads(this.threads)
+      if (this.threads.length === 0) break
+    }
 
     // 衝突コールバックのチェック
     this.checkCollisionCallbacks()
@@ -356,24 +521,19 @@ export class Runtime {
 
     if (this.scene) {
       for (const sprite of this.sprites.values()) {
-        if (sprite.physicsMode === "dynamic") {
+        if (sprite.physicsMode === "dynamic" && sprite._velocityDirty) {
           this.scene.setSpriteVelocity(sprite.id, sprite.velocityX, sprite.velocityY)
+          sprite._velocityDirty = false
         }
       }
     }
 
+    // タイマー更新
+    this.updateTimers()
+
     this.onSpritesUpdate?.(this.getSpriteStates())
 
-    const hasWaitingScripts = this.scripts.some(
-      (s) =>
-        s.opcode === "event_whenkeypressed" ||
-        s.opcode === "observer_whenvarchanges" ||
-        s.opcode === "observer_wheneventreceived" ||
-        s.opcode === "clone_whencloned" ||
-        s.opcode === "event_whentouched"
-    )
-
-    if (this.threads.length === 0 && !hasWaitingScripts) {
+    if (this.threads.length === 0 && !this._hasWaitingScripts) {
       this.running = false
       this.rafId = 0
       this.inTick = false
@@ -498,9 +658,12 @@ export class Runtime {
       y: caller?.y ?? sourceSprite.y,
       visible: true,
       sayText: "",
+      sayTextX: 0,
+      sayTextY: 0,
       sayTimer: null,
     }
     this.sprites.set(cloneId, cloneSprite)
+    this.invalidateSpriteCache()
 
     // 元スプライトのスクリプトをクローンにも登録
     const parentId = cloneSprite.parentId
@@ -514,6 +677,8 @@ export class Runtime {
         hatArgs: s.hatArgs,
       })
     }
+
+    this.recomputeHasWaitingScripts()
 
     // "clone_whencloned" スクリプトを起動
     for (const s of this.scripts) {
@@ -543,6 +708,8 @@ export class Runtime {
 
     // スプライトを削除
     this.sprites.delete(spriteId)
+    this.invalidateSpriteCache()
+    this.recomputeHasWaitingScripts()
 
     // GameScene からも削除
     this.scene?.removeSprite(spriteId)
@@ -560,8 +727,7 @@ export class Runtime {
     // Phaser 側にもコールバック登録
     const sprite = this.sprites.get(spriteId)
     if (!sprite) return
-    const allSprites = Array.from(this.sprites.values())
-    const target = allSprites.find((s) => s.name === targetName)
+    const target = this.getSpriteByName(targetName)
     if (!target || !this.scene) return
 
     this.scene.registerCollisionCallback(spriteId, target.id, () => {
@@ -578,14 +744,58 @@ export class Runtime {
       if (!sprite) continue
 
       for (const { targetName, eventName } of callbacks) {
-        const allSprites = Array.from(this.sprites.values())
-        const target = allSprites.find((s) => s.name === targetName)
+        const target = this.getSpriteByName(targetName)
         if (!target) continue
 
         if (this.scene.checkOverlap(spriteId, target.id)) {
           this.emitEvent(eventName, { self: sprite.name, other: targetName })
         }
       }
+    }
+  }
+
+  // ─── タイマー管理 ─────────────────────────────────────
+
+  addInterval(spriteId: string, eventName: string, ms: number) {
+    const key = `${spriteId}:${eventName}`
+    this.intervals.set(key, { eventName, ms, elapsed: 0 })
+  }
+
+  removeInterval(spriteId: string, eventName: string) {
+    const key = `${spriteId}:${eventName}`
+    this.intervals.delete(key)
+  }
+
+  addTimeout(spriteId: string, eventName: string, ms: number) {
+    const key = `${spriteId}:${eventName}:${Date.now()}`
+    this.timeouts.set(key, { eventName, ms, elapsed: 0 })
+  }
+
+  private updateTimers() {
+    const now = this.now()
+    const dt = this.lastTickTime > 0 ? now - this.lastTickTime : 16
+    this.lastTickTime = now
+
+    // インターバル
+    for (const [, timer] of this.intervals) {
+      timer.elapsed += dt
+      if (timer.elapsed >= timer.ms) {
+        timer.elapsed -= timer.ms
+        this.emitEvent(timer.eventName, null)
+      }
+    }
+
+    // タイムアウト
+    const expired: string[] = []
+    for (const [key, timer] of this.timeouts) {
+      timer.elapsed += dt
+      if (timer.elapsed >= timer.ms) {
+        this.emitEvent(timer.eventName, null)
+        expired.push(key)
+      }
+    }
+    for (const key of expired) {
+      this.timeouts.delete(key)
     }
   }
 
@@ -598,6 +808,8 @@ export class Runtime {
   private checkTouchEvents() {
     if (!this.scene) return
 
+    const allSprites = this.getSpriteArray()
+
     for (const s of this.scripts) {
       if (s.opcode !== "event_whentouched") continue
 
@@ -605,10 +817,9 @@ export class Runtime {
       const sprite = this.sprites.get(s.spriteId)
       if (!sprite || !sprite.bodyEnabled) continue
 
-      const allSprites = Array.from(this.sprites.values())
       const targets = targetName === "any"
         ? allSprites.filter((t) => t.id !== s.spriteId)
-        : allSprites.filter((t) => t.name === targetName)
+        : (this.spriteNameIndex.get(targetName) ?? [])
 
       const stateKey = `${s.spriteId}:${s.hatBlockId}`
       if (!this.touchingState.has(stateKey)) {

@@ -44,11 +44,29 @@ function createSequencer(
     opacity: 100,
     tint: null,
     flipX: false,
+    sayTextX: 0,
+    sayTextY: 0,
+    angle: 0,
+    accelerationX: 0,
+    accelerationY: 0,
+    dragX: 0,
+    dragY: 0,
+    useDamping: false,
+    maxVelocityX: 10000,
+    maxVelocityY: 10000,
+    angularVelocity: 0,
+    immovable: false,
+    mass: 1,
+    pushable: true,
+    mouseDown: false,
+    mouseWheelDelta: 0,
+    _velocityDirty: false,
   }
 
   const callbacks: SequencerCallbacks = {
     getSprite: () => sprite,
     getAllSprites: () => [sprite],
+    getSpriteByName: () => undefined,
     getVariable: (name) => variables.get(name),
     setVariable: (name, value) => void variables.set(name, value),
     sendEvent: () => undefined,
@@ -65,6 +83,10 @@ function createSequencer(
     deleteClone: () => undefined,
     registerCollisionCallback: () => undefined,
     restartGame: () => undefined,
+    now: () => Date.now(),
+    addInterval: () => undefined,
+    removeInterval: () => undefined,
+    addTimeout: () => undefined,
   }
 
   return new Sequencer(callbacks)

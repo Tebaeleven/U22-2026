@@ -29,32 +29,18 @@ export function sensing_touchingobject(
   }
 
   if (target === "mouse-pointer") {
-    // マウスポインタとの矩形判定（コスチュームサイズを考慮）
     const mx = util.getMouseX()
     const my = util.getMouseY()
-    const scene = util.getScene()
-    if (scene) {
-      // Phaser ボディがあればそちらで判定
-      const mouseSprites = util.getAllSprites()
-      const self = mouseSprites.find((s) => s.id === sprite.id)
-      if (self) {
-        const halfW = 24 * (sprite.size / 100)
-        const halfH = 24 * (sprite.size / 100)
-        return Math.abs(sprite.x - mx) < halfW && Math.abs(sprite.y - my) < halfH
-      }
-    }
-    const dx = sprite.x - mx
-    const dy = sprite.y - my
-    const threshold = (sprite.size / 100) * 24
-    return dx * dx + dy * dy < threshold * threshold
+    const halfW = 24 * (sprite.size / 100)
+    const halfH = 24 * (sprite.size / 100)
+    return Math.abs(sprite.x - mx) < halfW && Math.abs(sprite.y - my) < halfH
   }
 
   // スプライト名で検索して Phaser の overlap 判定
   const scene = util.getScene()
   if (!scene) return false
 
-  const allSprites = util.getAllSprites()
-  const targetSprite = allSprites.find((s) => s.name === target)
+  const targetSprite = util.getSpriteByName(target)
   if (!targetSprite) return false
 
   return scene.checkOverlap(sprite.id, targetSprite.id)
@@ -70,12 +56,44 @@ export function sensing_keypressed(
 }
 
 /** タイマー（Runtime 開始からの秒数） */
-let timerStart = Date.now()
-export function sensing_timer(_args: BlockArgs, _util: BlockUtil): number {
-  return (Date.now() - timerStart) / 1000
+let timerStart = 0
+export function sensing_timer(_args: BlockArgs, util: BlockUtil): number {
+  return (util.now() - timerStart) / 1000
 }
 
 /** タイマーをリセット */
-export function sensing_resettimer(_args: BlockArgs, _util: BlockUtil) {
-  timerStart = Date.now()
+export function sensing_resettimer(_args: BlockArgs, util: BlockUtil) {
+  timerStart = util.now()
+}
+
+// ── Phase 3: 入力拡張 ──────────────────────────────────
+
+/** マウスボタンが押されているか */
+export function sensing_mousedown(_args: BlockArgs, util: BlockUtil): boolean {
+  const scene = util.getScene()
+  if (!scene) return false
+  return scene.isMouseDown()
+}
+
+/** マウスホイールのデルタ値 */
+export function sensing_mousewheel(_args: BlockArgs, util: BlockUtil): number {
+  const scene = util.getScene()
+  if (!scene) return 0
+  return scene.getMouseWheelDelta()
+}
+
+/** キーが今押された瞬間かどうか（前フレームで押されていなかった場合のみ true） */
+const prevKeyState = new Map<string, boolean>()
+export function sensing_keyjustdown(args: BlockArgs, util: BlockUtil): boolean {
+  const key = String(args.KEY_OPTION ?? "space")
+  const isDown = util.isKeyPressed(key)
+  const wasDown = prevKeyState.get(key) ?? false
+  prevKeyState.set(key, isDown)
+  return isDown && !wasDown
+}
+
+/** スプライトのドラッグを有効化 */
+export function sensing_enabledrag(_args: BlockArgs, util: BlockUtil) {
+  const scene = util.getScene()
+  if (scene) scene.enableSpriteDrag(util.getSprite().id)
 }

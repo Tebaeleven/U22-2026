@@ -85,6 +85,19 @@ export function motion_direction(_args: BlockArgs, util: BlockUtil): number {
   return util.getSprite().direction
 }
 
+/** 描画回転角度を設定 */
+export function motion_setangle(args: BlockArgs, util: BlockUtil) {
+  const angle = Number(args.ANGLE ?? 0)
+  const sprite = util.getSprite()
+  sprite.angle = angle
+  util.getScene()?.setSpriteAngle(sprite.id, angle)
+}
+
+/** 描画回転角度（レポーター） */
+export function motion_angle(_args: BlockArgs, util: BlockUtil): number {
+  return util.getSprite().angle
+}
+
 /** もし端に着いたら跳ね返る */
 export function motion_ifonedgebounce(_args: BlockArgs, util: BlockUtil) {
   const sprite = util.getSprite()
@@ -126,13 +139,13 @@ export function motion_glidesecstoxy(args: BlockArgs, util: BlockUtil) {
   const frame = util.stackFrame
 
   if (frame.startTime === undefined) {
-    frame.startTime = Date.now()
+    frame.startTime = util.now()
     frame.startX = sprite.x
     frame.startY = sprite.y
     frame.duration = secs * 1000
   }
 
-  const elapsed = Date.now() - (frame.startTime as number)
+  const elapsed = util.now() - (frame.startTime as number)
   const t = Math.min(elapsed / (frame.duration as number), 1)
 
   sprite.x = (frame.startX as number) + (targetX - (frame.startX as number)) * t
@@ -159,7 +172,7 @@ export function motion_tweento(args: BlockArgs, util: BlockUtil) {
       frame.tweenPromise = scene.tweenSprite(sprite.id, x, y, secs * 1000)
     } else {
       // シーンなし: glide と同じ動作にフォールバック
-      frame.startTime = Date.now()
+      frame.startTime = util.now()
       frame.startX = sprite.x
       frame.startY = sprite.y
       frame.duration = secs * 1000
@@ -175,7 +188,7 @@ export function motion_tweento(args: BlockArgs, util: BlockUtil) {
   }
 
   // フォールバック: 手動補間
-  const elapsed = Date.now() - (frame.startTime as number)
+  const elapsed = util.now() - (frame.startTime as number)
   const t = Math.min(elapsed / (frame.duration as number), 1)
   sprite.x = (frame.startX as number) + ((frame.targetX as number) - (frame.startX as number)) * t
   sprite.y = (frame.startY as number) + ((frame.targetY as number) - (frame.startY as number)) * t

@@ -14,6 +14,7 @@ import { STAGE_WIDTH, STAGE_HEIGHT } from "./types"
 export interface SequencerCallbacks {
   getSprite: (id: string) => SpriteRuntime | undefined
   getAllSprites: () => SpriteRuntime[]
+  getSpriteByName: (name: string) => SpriteRuntime | undefined
   getVariable: (name: string) => unknown
   setVariable: (name: string, value: unknown) => void
   sendEvent: (name: string, data: unknown) => void
@@ -28,24 +29,49 @@ export interface SequencerCallbacks {
   deleteClone: (spriteId: string) => void
   registerCollisionCallback: (spriteId: string, targetName: string, eventName: string) => void
   restartGame: () => void
+  now: () => number
+  addInterval: (spriteId: string, eventName: string, ms: number) => void
+  removeInterval: (spriteId: string, eventName: string) => void
+  addTimeout: (spriteId: string, eventName: string, ms: number) => void
 }
 
 /**
  * Sequencer — スレッド実行スケジューラ
  * Scratch VM の Sequencer に対応。フレーム時間の予算内でスレッドを実行する。
  */
+export type SpeedMode = "normal" | "fast" | "turbo"
+
 export class Sequencer {
   private callbacks: SequencerCallbacks
+  /** フレーム時間予算（ms）。16.67ms の約72% でレンダリングに余裕を残す */
+  private static readonly FRAME_BUDGET_NORMAL = 12
+  private static readonly FRAME_BUDGET_FAST = 14
+  /** ラウンドロビン用：次フレームの開始スレッドインデックス */
+  private threadStartIndex = 0
+  /** 実行速度モード */
+  speedMode: SpeedMode = "normal"
 
   constructor(callbacks: SequencerCallbacks) {
     this.callbacks = callbacks
   }
 
   stepThreads(threads: Thread[]): Thread[] {
-    for (const thread of threads) {
+    const budget = this.speedMode === "fast" || this.speedMode === "turbo"
+      ? Sequencer.FRAME_BUDGET_FAST
+      : Sequencer.FRAME_BUDGET_NORMAL
+    const start = performance.now()
+    const len = threads.length
+    for (let i = 0; i < len; i++) {
+      const idx = (this.threadStartIndex + i) % len
+      const thread = threads[idx]
       if (thread.isFinished) continue
       this.stepThread(thread)
+      if (performance.now() - start > budget) {
+        this.threadStartIndex = (this.threadStartIndex + i + 1) % Math.max(len, 1)
+        return threads.filter((t) => !t.isFinished)
+      }
     }
+    this.threadStartIndex = 0
     return threads.filter((t) => !t.isFinished)
   }
 
@@ -89,6 +115,7 @@ export class Sequencer {
         },
         getSprite: () => sprite,
         getAllSprites: () => this.callbacks.getAllSprites(),
+        getSpriteByName: (name: string) => this.callbacks.getSpriteByName(name),
         stageWidth: STAGE_WIDTH,
         stageHeight: STAGE_HEIGHT,
         getContext: (key: string) => thread.context[key],
@@ -107,6 +134,13 @@ export class Sequencer {
           this.callbacks.registerCollisionCallback(thread.spriteId, targetName, callbackEvent),
         getCollisionTarget: () => String(thread.context.collisionTarget ?? ""),
         restartGame: () => this.callbacks.restartGame(),
+        now: () => this.callbacks.now(),
+        addInterval: (eventName: string, ms: number) =>
+          this.callbacks.addInterval(thread.spriteId, eventName, ms),
+        removeInterval: (eventName: string) =>
+          this.callbacks.removeInterval(thread.spriteId, eventName),
+        addTimeout: (eventName: string, ms: number) =>
+          this.callbacks.addTimeout(thread.spriteId, eventName, ms),
       }
 
       const resolvedArgs = this.resolveInputBlocks(block, block.args, thread, util)

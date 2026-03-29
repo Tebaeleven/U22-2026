@@ -1,4 +1,5 @@
 import type { BlockArgs, BlockUtil } from "../types"
+import { consoleLog } from "@/features/editor/components/console-panel"
 
 /** _と言う */
 export function looks_say(args: BlockArgs, util: BlockUtil) {
@@ -14,11 +15,11 @@ export function looks_sayforsecs(args: BlockArgs, util: BlockUtil) {
 
   if (frame.startTime === undefined) {
     sprite.sayText = String(args.MESSAGE ?? "")
-    frame.startTime = Date.now()
+    frame.startTime = util.now()
     frame.duration = secs * 1000
   }
 
-  const elapsed = Date.now() - (frame.startTime as number)
+  const elapsed = util.now() - (frame.startTime as number)
   if (elapsed < (frame.duration as number)) {
     util.yield()
   } else {
@@ -88,7 +89,8 @@ export function looks_addtext(args: BlockArgs, util: BlockUtil) {
   const y = Number(args.Y ?? 0)
   const sprite = util.getSprite()
   sprite.sayText = text
-  // HUD テキストの座標をコンテキストとして保存（GameScene が位置を使う）
+  sprite.sayTextX = x
+  sprite.sayTextY = y
   sprite.sayTimer = null
 }
 
@@ -134,7 +136,8 @@ export function looks_setopacity(args: BlockArgs, util: BlockUtil) {
 
 /** 左右反転 */
 export function looks_setflipx(args: BlockArgs, util: BlockUtil) {
-  const flip = String(args.ENABLED ?? "on") === "on"
+  const val = args.ENABLED ?? "on"
+  const flip = val === true || val === "on" || val === "true"
   const sprite = util.getSprite()
   sprite.flipX = flip
   const scene = util.getScene()
@@ -167,4 +170,10 @@ export function graphics_clear(_args: BlockArgs, util: BlockUtil) {
   const sprite = util.getSprite()
   const scene = util.getScene()
   if (scene) scene.graphicsClear(sprite.id)
+}
+
+/** コンソールに出力 */
+export function looks_print(args: BlockArgs, _util: BlockUtil) {
+  const message = String(args.MESSAGE ?? "")
+  consoleLog(message)
 }

@@ -6,8 +6,10 @@ import {
   type SpriteDef,
   type Costume,
   type ColliderDef,
+  type SoundDef,
 } from "@/features/editor/constants"
 import type { BlockProjectData } from "@/features/editor/block-editor/types"
+import { applySpriteRenameToBlockProjectData } from "@/features/editor/block-editor/block-data-sprite-rename"
 import { SAMPLE_PROJECTS, resolveSample } from "@/features/editor/samples"
 
 // ─── デフォルトのサンプルプロジェクトからデータ生成 ──────────
@@ -150,6 +152,22 @@ const spritesSlice = createSlice({
       }
     },
 
+    // ─── サウンド操作 ───────────────────────────────
+
+    addSound(state, action: PayloadAction<{ spriteId: string; sound: SoundDef }>) {
+      const sprite = state.list.find((s) => s.id === action.payload.spriteId)
+      if (sprite) {
+        if (!sprite.sounds) sprite.sounds = []
+        sprite.sounds.push(action.payload.sound)
+      }
+    },
+    deleteSound(state, action: PayloadAction<{ spriteId: string; soundId: string }>) {
+      const sprite = state.list.find((s) => s.id === action.payload.spriteId)
+      if (sprite?.sounds) {
+        sprite.sounds = sprite.sounds.filter((s) => s.id !== action.payload.soundId)
+      }
+    },
+
     // ─── スナップショット ───────────────────────────
 
     saveSnapshot(state) {
@@ -195,6 +213,69 @@ const spritesSlice = createSlice({
       state.blockDataMap = action.payload
     },
 
+    /** 全スプライトの blockDataMap に保存されたブロック入力のスプライト名参照を置換する */
+    renameSpriteInBlockDataMap(
+      state,
+      action: PayloadAction<{ oldName: string; newName: string }>
+    ) {
+      const { oldName, newName } = action.payload
+      for (const spriteId of Object.keys(state.blockDataMap)) {
+        const prev = state.blockDataMap[spriteId]
+        const next = applySpriteRenameToBlockProjectData(prev, oldName, newName)
+        if (next !== prev) {
+          state.blockDataMap[spriteId] = next
+        }
+      }
+    },
+
+    /** スプライトを複製する */
+    duplicateSprite(state, action: PayloadAction<string>) {
+      const source = state.list.find((s) => s.id === action.payload)
+      if (!source) return
+
+      const newId = `sprite-${Date.now()}`
+      const newCostumes: Costume[] = source.costumes.map((c, i) => ({
+        ...c,
+        id: `costume-${Date.now()}-${i}`,
+      }))
+
+      const newSprite: SpriteDef = {
+        id: newId,
+        name: `${source.name} (コピー)`,
+        emoji: source.emoji,
+        costumes: newCostumes,
+        currentCostumeIndex: source.currentCostumeIndex,
+        collider: { ...source.collider },
+        x: source.x + 30,
+        y: source.y - 30,
+        size: source.size,
+        direction: source.direction,
+        visible: source.visible,
+      }
+
+      state.list.push(newSprite)
+
+      // ブロックデータも複製
+      const sourceBlockData = state.blockDataMap[action.payload]
+      if (sourceBlockData) {
+        state.blockDataMap[newId] = JSON.parse(JSON.stringify(sourceBlockData))
+      }
+
+      state.selectedId = newId
+    },
+
+    /** スプライトの並び順を移動 */
+    moveSprite(state, action: PayloadAction<{ id: string; direction: "up" | "down" }>) {
+      const { id, direction } = action.payload
+      const idx = state.list.findIndex((s) => s.id === id)
+      if (idx === -1) return
+      const targetIdx = direction === "up" ? idx - 1 : idx + 1
+      if (targetIdx < 0 || targetIdx >= state.list.length) return
+      const temp = state.list[idx]
+      state.list[idx] = state.list[targetIdx]
+      state.list[targetIdx] = temp
+    },
+
     // VM から一括でスプライト位置を更新
     batchUpdatePositions(
       state,
@@ -233,5 +314,10 @@ export const {
   batchUpdatePositions,
   saveBlockData,
   loadAllBlockData,
+  renameSpriteInBlockDataMap,
+  duplicateSprite,
+  moveSprite,
+  addSound,
+  deleteSound,
 } = spritesSlice.actions
 export default spritesSlice.reducer

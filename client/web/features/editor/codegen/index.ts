@@ -1,11 +1,16 @@
 // codegen エントリポイント
 
 export { parsePseudocode } from "./pseudocode-parser"
+export { parseClassCode } from "./class-parser"
+export { classASTToLegacyAST } from "./ast-converter"
 export { generateBlockData } from "./block-generator"
 export type { ProgramAST, SpriteAST, ScriptAST } from "./ast-types"
+export type { ClassProgramAST, ClassAST, MethodAST, MethodKind } from "./class-ast-types"
 
 import type { BlockProjectData } from "../block-editor/types"
 import { parsePseudocode } from "./pseudocode-parser"
+import { parseClassCode } from "./class-parser"
+import { classASTToLegacyAST } from "./ast-converter"
 import { generateBlockData } from "./block-generator"
 
 /** 疑似コード文字列 → スプライト名ごとの BlockProjectData マップ */
@@ -14,4 +19,24 @@ export function pseudocodeToBlockData(
 ): Record<string, BlockProjectData> {
   const ast = parsePseudocode(source)
   return generateBlockData(ast)
+}
+
+/** クラスベース疑似コード → スプライト名ごとの BlockProjectData マップ */
+export function classCodeToBlockData(
+  source: string,
+): Record<string, BlockProjectData> {
+  const classAST = parseClassCode(source)
+  const legacyAST = classASTToLegacyAST(classAST)
+  return generateBlockData(legacyAST)
+}
+
+/** 自動判定: class で始まればクラスベース、それ以外は旧形式で解析 */
+export function codeToBlockData(
+  source: string,
+): Record<string, BlockProjectData> {
+  const trimmed = source.trimStart()
+  if (trimmed.startsWith("class ")) {
+    return classCodeToBlockData(source)
+  }
+  return pseudocodeToBlockData(source)
 }

@@ -24,6 +24,8 @@ export class GameScene extends Phaser.Scene implements GameSceneProxy {
   private physicsModeMap = new Map<string, PhysicsMode>()
   /** Phaser の collider オブジェクト（再構成時にクリアする） */
   private activeColliders: Phaser.Physics.Arcade.Collider[] = []
+  /** スプライトIDごとのコライダー管理（差分追加/削除用） */
+  private perSpriteColliders: Map<string, Phaser.Physics.Arcade.Collider[]> = new Map()
 
   private static readonly SPEECH_FONT_SIZE = 120
   private static readonly SPEECH_PADDING_X = 16
@@ -50,6 +52,8 @@ export class GameScene extends Phaser.Scene implements GameSceneProxy {
         this.onBackgroundClicked?.()
       }
     })
+
+    this.initWheelListener()
   }
 
   private drawGrid() {
@@ -269,6 +273,7 @@ export class GameScene extends Phaser.Scene implements GameSceneProxy {
         this.applyPhysicsMode(imageObj, physMode)
         this.physicsModeMap.set(sprite.id, physMode)
         this.spriteMap.set(sprite.id, imageObj)
+        this.addCollidersForSprite(sprite.id, physMode)
       }
 
       this.syncSpriteTexture(sprite.id, imageObj, texKey, costume?.dataUrl)
@@ -277,9 +282,10 @@ export class GameScene extends Phaser.Scene implements GameSceneProxy {
       const currentPhysMode = sprite.physicsMode ?? "none"
       const prevPhysMode = this.physicsModeMap.get(sprite.id) ?? "none"
       if (currentPhysMode !== prevPhysMode) {
+        this.removeCollidersForSprite(sprite.id)
         this.applyPhysicsMode(imageObj, currentPhysMode)
         this.physicsModeMap.set(sprite.id, currentPhysMode)
-        this.rebuildColliders()
+        this.addCollidersForSprite(sprite.id, currentPhysMode)
       }
 
       // サイズ・可視性・透明度・反転・色を適用
@@ -287,6 +293,7 @@ export class GameScene extends Phaser.Scene implements GameSceneProxy {
       imageObj.setVisible(sprite.visible)
       imageObj.setAlpha((sprite.opacity ?? 100) / 100)
       imageObj.setFlipX(sprite.flipX ?? false)
+      imageObj.setAngle(sprite.angle ?? 0)
       if (sprite.tint != null) {
         imageObj.setTint(sprite.tint)
       }
@@ -346,7 +353,9 @@ export class GameScene extends Phaser.Scene implements GameSceneProxy {
           this.speechMap.set(sprite.id, speech)
         }
         speech.setText(sprite.sayText)
-        speech.setPosition(px, py - height / 2 - 8)
+        const textPx = STAGE_WIDTH / 2 + sprite.sayTextX
+        const textPy = STAGE_HEIGHT / 2 - sprite.sayTextY
+        speech.setPosition(textPx, textPy)
         speech.setVisible(true)
       } else {
         const speech = this.speechMap.get(sprite.id)
@@ -377,6 +386,17 @@ export class GameScene extends Phaser.Scene implements GameSceneProxy {
    */
   showInitialSprites(sprites: SpriteDef[]) {
     const activeIds = new Set<string>()
+
+    // カメラ状態をリセット
+    this.cameras.main.resetFX()
+    this.cameras.main.setZoom(1)
+    this.cameras.main.setScroll(0, 0)
+    this.cameras.main.stopFollow()
+    this.cameras.main.setAlpha(1)
+
+    // ID付きテキストをクリア
+    for (const [, t] of this.textAtMap) t.destroy()
+    this.textAtMap.clear()
 
     for (const [, speech] of this.speechMap) speech.destroy()
     this.speechMap.clear()
@@ -491,9 +511,10 @@ export class GameScene extends Phaser.Scene implements GameSceneProxy {
     if (!img) return
     const prevMode = this.physicsModeMap.get(id) ?? "none"
     if (prevMode === mode) return
+    this.removeCollidersForSprite(id)
     this.applyPhysicsMode(img, mode)
     this.physicsModeMap.set(id, mode)
-    this.rebuildColliders()
+    this.addCollidersForSprite(id, mode)
   }
 
   /** dynamic スプライトの Phaser 位置を読み取り、VM 側に逆同期するためのデータを返す */
@@ -687,8 +708,8 @@ export class GameScene extends Phaser.Scene implements GameSceneProxy {
     if (gfx) { gfx.destroy(); this.graphicsMap.delete(id) }
     this.colliderMap.delete(id)
     this.currentTextureMap.delete(id)
+    this.removeCollidersForSprite(id)
     this.physicsModeMap.delete(id)
-    this.rebuildColliders()
   }
 
   /**
@@ -730,41 +751,377 @@ export class GameScene extends Phaser.Scene implements GameSceneProxy {
     }
   }
 
-  /** 既存の collider をクリア */
+  /** 既存の collider を全クリア */
   private clearColliders() {
     for (const c of this.activeColliders) {
       c.destroy()
     }
     this.activeColliders = []
+    this.perSpriteColliders.clear()
   }
 
-  /** dynamic × static/dynamic 間の collider を再構築 */
+  /** 1つのスプライトに関連するコライダーだけを追加（差分方式） */
+  private addCollidersForSprite(id: string, mode: PhysicsMode) {
+    if (mode === "none") return
+    const img = this.spriteMap.get(id)
+    if (!img) return
+
+    const newColliders: Phaser.Physics.Arcade.Collider[] = []
+
+    for (const [otherId, otherImg] of this.spriteMap) {
+      if (otherId === id) continue
+      const otherMode = this.physicsModeMap.get(otherId) ?? "none"
+      if (otherMode === "none") continue
+
+      // dynamic × static, dynamic × dynamic のペアのみ
+      const shouldCollide =
+        (mode === "dynamic" && (otherMode === "static" || otherMode === "dynamic")) ||
+        (mode === "static" && otherMode === "dynamic")
+
+      if (shouldCollide) {
+        const collider = this.physics.add.collider(img, otherImg)
+        this.activeColliders.push(collider)
+        newColliders.push(collider)
+
+        // 相手側にもこのコライダーを記録
+        const otherList = this.perSpriteColliders.get(otherId) ?? []
+        otherList.push(collider)
+        this.perSpriteColliders.set(otherId, otherList)
+      }
+    }
+
+    this.perSpriteColliders.set(id, newColliders)
+  }
+
+  /** 1つのスプライトに関連するコライダーだけを削除（差分方式） */
+  private removeCollidersForSprite(id: string) {
+    const colliders = this.perSpriteColliders.get(id)
+    if (!colliders) return
+
+    for (const c of colliders) {
+      c.destroy()
+      // activeColliders からも除去
+      const idx = this.activeColliders.indexOf(c)
+      if (idx >= 0) this.activeColliders.splice(idx, 1)
+    }
+    this.perSpriteColliders.delete(id)
+
+    // 他スプライトの perSpriteColliders からもこのコライダーを除去
+    for (const [, list] of this.perSpriteColliders) {
+      for (let i = list.length - 1; i >= 0; i--) {
+        if (list[i].active === false) {
+          list.splice(i, 1)
+        }
+      }
+    }
+  }
+
+  /** dynamic × static/dynamic 間の collider を全再構築（初期化用） */
   private rebuildColliders() {
     this.clearColliders()
-
-    const dynamicSprites: Phaser.GameObjects.Image[] = []
-    const staticSprites: Phaser.GameObjects.Image[] = []
-
-    for (const [id, img] of this.spriteMap) {
+    for (const [id] of this.spriteMap) {
       const mode = this.physicsModeMap.get(id) ?? "none"
-      if (mode === "dynamic") dynamicSprites.push(img)
-      else if (mode === "static") staticSprites.push(img)
-    }
-
-    // dynamic × static の衝突
-    for (const dyn of dynamicSprites) {
-      for (const stat of staticSprites) {
-        const collider = this.physics.add.collider(dyn, stat)
-        this.activeColliders.push(collider)
+      if (mode !== "none") {
+        this.addCollidersForSprite(id, mode)
       }
     }
+  }
 
-    // dynamic × dynamic の衝突
-    for (let i = 0; i < dynamicSprites.length; i++) {
-      for (let j = i + 1; j < dynamicSprites.length; j++) {
-        const collider = this.physics.add.collider(dynamicSprites[i], dynamicSprites[j])
-        this.activeColliders.push(collider)
+  // ─── カメラ ──────────────────────────────────────────
+
+  cameraFollow(spriteId: string) {
+    const img = this.spriteMap.get(spriteId)
+    if (img) this.cameras.main.startFollow(img, true, 0.1, 0.1)
+  }
+
+  cameraStopFollow() {
+    this.cameras.main.stopFollow()
+  }
+
+  cameraShake(duration: number, intensity: number) {
+    this.cameras.main.shake(duration, intensity)
+  }
+
+  cameraZoom(scale: number) {
+    this.cameras.main.setZoom(scale)
+  }
+
+  cameraFade(duration: number): Promise<void> {
+    return new Promise((resolve) => {
+      this.cameras.main.fadeOut(duration, 0, 0, 0, (_cam: unknown, progress: number) => {
+        if (progress >= 1) resolve()
+      })
+    })
+  }
+
+  // ─── Tween 拡張 ─────────────────────────────────────
+
+  tweenSpriteScale(id: string, scale: number, duration: number): Promise<void> {
+    const img = this.spriteMap.get(id)
+    if (!img) return Promise.resolve()
+    return new Promise((resolve) => {
+      this.tweens.add({
+        targets: img,
+        scaleX: scale,
+        scaleY: scale,
+        duration,
+        ease: "Sine.easeInOut",
+        onComplete: () => resolve(),
+      })
+    })
+  }
+
+  tweenSpriteAlpha(id: string, alpha: number, duration: number): Promise<void> {
+    const img = this.spriteMap.get(id)
+    if (!img) return Promise.resolve()
+    return new Promise((resolve) => {
+      this.tweens.add({
+        targets: img,
+        alpha,
+        duration,
+        ease: "Sine.easeInOut",
+        onComplete: () => resolve(),
+      })
+    })
+  }
+
+  tweenSpriteAngle(id: string, angle: number, duration: number): Promise<void> {
+    const img = this.spriteMap.get(id)
+    if (!img) return Promise.resolve()
+    return new Promise((resolve) => {
+      this.tweens.add({
+        targets: img,
+        angle,
+        duration,
+        ease: "Sine.easeInOut",
+        onComplete: () => resolve(),
+      })
+    })
+  }
+
+  // ─── 回転 ────────────────────────────────────────────
+
+  setSpriteAngle(id: string, angle: number) {
+    const img = this.spriteMap.get(id)
+    if (img) img.setAngle(angle)
+  }
+
+  // ─── テキスト拡張 ────────────────────────────────────
+
+  private textAtMap = new Map<string, Phaser.GameObjects.Text>()
+
+  addTextAt(spriteId: string, textId: string, text: string, stageX: number, stageY: number, size: number, color: string) {
+    const key = `${spriteId}:${textId}`
+    const existing = this.textAtMap.get(key)
+    if (existing) existing.destroy()
+
+    const px = STAGE_WIDTH / 2 + stageX
+    const py = STAGE_HEIGHT / 2 - stageY
+    const t = this.add.text(px, py, text, {
+      fontFamily: "monospace",
+      fontSize: `${size}px`,
+      color,
+    }).setOrigin(0, 0).setDepth(100)
+
+    this.textAtMap.set(key, t)
+  }
+
+  updateTextAt(_spriteId: string, textId: string, text: string) {
+    // テキストIDで直接検索（spriteId付きキー）
+    for (const [key, t] of this.textAtMap) {
+      if (key.endsWith(`:${textId}`)) {
+        t.setText(text)
+        return
       }
     }
+  }
+
+  removeTextAt(spriteId: string, textId: string) {
+    const key = `${spriteId}:${textId}`
+    const t = this.textAtMap.get(key)
+    if (t) {
+      t.destroy()
+      this.textAtMap.delete(key)
+    }
+  }
+
+  // ─── パーティクル ────────────────────────────────────
+
+  emitParticles(stageX: number, stageY: number, count: number, color: number, speed: number) {
+    const px = STAGE_WIDTH / 2 + stageX
+    const py = STAGE_HEIGHT / 2 - stageY
+
+    // 小さな矩形テクスチャを動的生成
+    const key = `particle_${color}`
+    if (!this.textures.exists(key)) {
+      const gfx = this.add.graphics()
+      gfx.fillStyle(color, 1)
+      gfx.fillRect(0, 0, 6, 6)
+      gfx.generateTexture(key, 6, 6)
+      gfx.destroy()
+    }
+
+    const emitter = this.add.particles(px, py, key, {
+      speed: { min: speed * 0.5, max: speed },
+      angle: { min: 0, max: 360 },
+      scale: { start: 1, end: 0 },
+      alpha: { start: 1, end: 0 },
+      lifespan: 600,
+      quantity: count,
+      emitting: false,
+    })
+    emitter.setDepth(90)
+    emitter.explode(count)
+
+    // 自動クリーンアップ
+    this.time.delayedCall(1000, () => {
+      emitter.destroy()
+    })
+  }
+
+  // ─── シーン制御 ─────────────────────────────────────
+
+  /** カメラ・テキスト等をリセット（実行開始時） */
+  resetEffects() {
+    this.cameras.main.resetFX()
+    this.cameras.main.setZoom(1)
+    this.cameras.main.setScroll(0, 0)
+    this.cameras.main.stopFollow()
+    this.cameras.main.setAlpha(1)
+
+    for (const [, t] of this.textAtMap) t.destroy()
+    this.textAtMap.clear()
+  }
+
+  /** シーンを一時停止（物理・Tween含む） */
+  pauseScene() {
+    this.scene.pause()
+  }
+
+  /** シーンを再開 */
+  resumeScene() {
+    this.scene.resume()
+  }
+
+  // ── Phase 1-2: 物理プロパティ拡張 ──────────────────────
+
+  private getBody(id: string): Phaser.Physics.Arcade.Body | null {
+    const img = this.spriteMap.get(id)
+    if (!img) return null
+    return (img.body as Phaser.Physics.Arcade.Body) ?? null
+  }
+
+  setSpriteAcceleration(id: string, ax: number, ay: number) {
+    const body = this.getBody(id)
+    if (body) body.setAcceleration(ax, ay)
+  }
+
+  setSpriteDrag(id: string, dx: number, dy: number) {
+    const body = this.getBody(id)
+    if (body) body.setDrag(dx, dy)
+  }
+
+  setSpriteDamping(id: string, enabled: boolean) {
+    const body = this.getBody(id)
+    if (body) body.useDamping = enabled
+  }
+
+  setSpriteMaxVelocity(id: string, vx: number, vy: number) {
+    const body = this.getBody(id)
+    if (body) body.setMaxVelocity(vx, vy)
+  }
+
+  setSpriteAngularVelocity(id: string, deg: number) {
+    const body = this.getBody(id)
+    if (body) body.setAngularVelocity(deg)
+  }
+
+  setSpriteImmovable(id: string, enabled: boolean) {
+    const body = this.getBody(id)
+    if (body) body.setImmovable(enabled)
+  }
+
+  setSpriteMass(id: string, mass: number) {
+    const body = this.getBody(id)
+    if (body) body.setMass(mass)
+  }
+
+  setSpritePushable(id: string, enabled: boolean) {
+    const body = this.getBody(id)
+    if (body) (body as unknown as { pushable: boolean }).pushable = enabled
+  }
+
+  worldWrap(id: string, padding: number) {
+    const img = this.spriteMap.get(id)
+    if (img && this.physics?.world) this.physics.world.wrap(img, padding)
+  }
+
+  getSpriteSpeed(id: string): number {
+    const body = this.getBody(id)
+    if (!body) return 0
+    return body.speed
+  }
+
+  moveToObject(id: string, targetX: number, targetY: number, speed: number) {
+    const img = this.spriteMap.get(id)
+    if (!img) return
+    const px = STAGE_WIDTH / 2 + targetX
+    const py = STAGE_HEIGHT / 2 - targetY
+    this.physics.moveTo(img, px, py, speed)
+  }
+
+  accelerateToObject(id: string, targetX: number, targetY: number, acceleration: number) {
+    const img = this.spriteMap.get(id)
+    if (!img) return
+    const px = STAGE_WIDTH / 2 + targetX
+    const py = STAGE_HEIGHT / 2 - targetY
+    this.physics.accelerateTo(img, px, py, acceleration)
+  }
+
+  velocityFromAngle(id: string, angle: number, speed: number) {
+    const body = this.getBody(id)
+    if (!body) return
+    const rad = Phaser.Math.DegToRad(angle)
+    this.physics.velocityFromRotation(rad, speed, body.velocity)
+  }
+
+  // ── Phase 3: 入力拡張 ──────────────────────────────────
+
+  private wheelDelta = 0
+  private dragPositions = new Map<string, { x: number; y: number }>()
+
+  isMouseDown(): boolean {
+    return this.input.activePointer.isDown
+  }
+
+  getMouseWheelDelta(): number {
+    const d = this.wheelDelta
+    this.wheelDelta = 0
+    return d
+  }
+
+  enableSpriteDrag(id: string) {
+    const img = this.spriteMap.get(id)
+    if (!img) return
+    if (img.input?.draggable) return
+    img.setInteractive({ draggable: true })
+    img.on("drag", (_pointer: Phaser.Input.Pointer, dragX: number, dragY: number) => {
+      img.setPosition(dragX, dragY)
+      this.dragPositions.set(id, {
+        x: dragX - STAGE_WIDTH / 2,
+        y: STAGE_HEIGHT / 2 - dragY,
+      })
+    })
+  }
+
+  getSpriteDragPosition(id: string): { x: number; y: number } | null {
+    return this.dragPositions.get(id) ?? null
+  }
+
+  /** ホイールイベントの初期化（create() から呼ばれる） */
+  private initWheelListener() {
+    this.input.on("wheel", (_pointer: Phaser.Input.Pointer, _gameObjects: Phaser.GameObjects.GameObject[], _deltaX: number, deltaY: number) => {
+      this.wheelDelta = deltaY
+    })
   }
 }

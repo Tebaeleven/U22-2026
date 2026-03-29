@@ -168,6 +168,7 @@ export type BlockCategory =
   | "lists"
   | "myblocks"
   | "physics"
+  | "camera"
 
 /** ブロックの型定義。形状・色・入力・カテゴリ・オペコードを持つ */
 export type BlockDef = {
@@ -181,6 +182,8 @@ export type BlockDef = {
   source: BlockSource
   headerReporterCopies?: HeaderReporterCopy[]
   paletteHidden?: boolean
+  /** パレットでホバー時に表示するツールチップ説明文 */
+  description?: string
 }
 
 // ─── ランタイム状態 ───

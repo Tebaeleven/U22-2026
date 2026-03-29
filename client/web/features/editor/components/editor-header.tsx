@@ -1,7 +1,8 @@
 "use client"
 
+import { useState, useEffect } from "react"
 import Link from "next/link"
-import { Globe, FolderOpen, ChevronLeft, Save, Loader2, RotateCcw, WifiOff, BookOpen, Bug } from "lucide-react"
+import { Globe, FolderOpen, ChevronLeft, Save, Loader2, RotateCcw, WifiOff, BookOpen, Bug, Sun, Moon } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Switch } from "@/components/ui/switch"
@@ -15,7 +16,7 @@ import {
   MenubarItem,
 } from "@/components/ui/menubar"
 
-export type EditorTileId = "palette" | "workspace" | "stage" | "sprites" | "hierarchy" | "inspector" | "debug"
+export type EditorTileId = "palette" | "workspace" | "stage" | "sprites" | "hierarchy" | "inspector" | "debug" | "samples" | "console" | "assets"
 
 export const TILE_TITLES: Record<EditorTileId, string> = {
   palette: "ブロックパレット",
@@ -25,9 +26,12 @@ export const TILE_TITLES: Record<EditorTileId, string> = {
   hierarchy: "ヒエラルキー",
   inspector: "インスペクター",
   debug: "デバッグ",
+  samples: "サンプル",
+  console: "コンソール",
+  assets: "アセット",
 }
 
-const ALL_TILES: EditorTileId[] = ["palette", "workspace", "stage", "hierarchy", "inspector", "sprites", "debug"]
+const ALL_TILES: EditorTileId[] = ["palette", "workspace", "stage", "hierarchy", "inspector", "sprites", "debug", "samples", "console", "assets"]
 
 export type SampleInfo = {
   id: string
@@ -45,6 +49,8 @@ interface EditorHeaderProps {
   visibleTiles: Set<EditorTileId>
   onToggleTile: (tile: EditorTileId) => void
   onResetLayout: () => void
+  layoutPresets?: Array<{ id: string; label: string }>
+  onSelectPreset?: (id: string) => void
   debugView?: boolean
   onToggleDebugView?: () => void
   samples?: SampleInfo[]
@@ -62,12 +68,31 @@ export function EditorHeader({
   visibleTiles,
   onToggleTile,
   onResetLayout,
+  layoutPresets = [],
+  onSelectPreset,
   debugView = false,
   onToggleDebugView,
   samples = [],
   currentSampleId,
   onLoadSample,
 }: EditorHeaderProps) {
+  const [isDark, setIsDark] = useState(false)
+
+  useEffect(() => {
+    const saved = localStorage.getItem("editor-theme")
+    if (saved === "dark") {
+      document.documentElement.classList.add("dark")
+      setIsDark(true)
+    }
+  }, [])
+
+  const toggleTheme = () => {
+    const next = !isDark
+    setIsDark(next)
+    document.documentElement.classList.toggle("dark", next)
+    localStorage.setItem("editor-theme", next ? "dark" : "light")
+  }
+
   return (
     <header className="relative flex h-11 items-center border-b bg-[#4d97ff] px-3 text-white">
       {/* 左側 */}
@@ -100,6 +125,12 @@ export function EditorHeader({
                 </MenubarCheckboxItem>
               ))}
               <MenubarSeparator />
+              {layoutPresets.map((preset) => (
+                <MenubarItem key={preset.id} onClick={() => onSelectPreset?.(preset.id)}>
+                  {preset.label}
+                </MenubarItem>
+              ))}
+              {layoutPresets.length > 0 && <MenubarSeparator />}
               <MenubarItem onClick={onResetLayout}>
                 <RotateCcw className="size-3.5 mr-1.5" />
                 レイアウトをリセット
@@ -176,6 +207,14 @@ export function EditorHeader({
 
       {/* 右側 */}
       <div className="flex items-center gap-2">
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          className="text-white hover:bg-white/10"
+          onClick={toggleTheme}
+        >
+          {isDark ? <Sun className="size-4" /> : <Moon className="size-4" />}
+        </Button>
         <Link href="/mystuff">
           <Button
             variant="ghost"

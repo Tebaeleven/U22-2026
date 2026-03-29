@@ -2,7 +2,7 @@
 
 import { useEffect, useCallback } from "react"
 import { createPortal } from "react-dom"
-import { Copy, Pencil, Trash2 } from "lucide-react"
+import { Copy, Pencil, Trash2, ListX } from "lucide-react"
 
 export type BlockContextMenuState = {
   blockId: string
@@ -15,12 +15,14 @@ export function BlockContextMenu({
   state,
   onClose,
   onDelete,
+  onDeleteChain,
   onDuplicate,
   onEdit,
 }: {
   state: BlockContextMenuState
   onClose: () => void
   onDelete: (blockId: string) => void
+  onDeleteChain?: (blockId: string) => void
   onDuplicate: (blockId: string) => void
   onEdit?: (blockId: string) => void
 }) {
@@ -89,6 +91,18 @@ export function BlockContextMenu({
           <Trash2 className="!size-4 shrink-0" />
           削除
         </button>
+        {onDeleteChain && (
+          <button
+            className="flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-sm text-destructive outline-hidden select-none hover:bg-destructive/10"
+            onClick={() => {
+              onDeleteChain(state.blockId)
+              onClose()
+            }}
+          >
+            <ListX className="!size-4 shrink-0" />
+            チェーンごと削除
+          </button>
+        )}
       </div>
     </div>,
     document.body

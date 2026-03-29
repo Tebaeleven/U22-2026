@@ -78,3 +78,5 @@ export {
   getBlockDefById,
   findBuiltinBlockDefId,
 } from "./blocks/block-defs"
+
+export { applySpriteRenameToBlockProjectData } from "./block-data-sprite-rename"

@@ -8,7 +8,7 @@ import { buildScripts } from "../engine/script-builder"
 import type { CompiledProgram, ScriptBlock } from "../engine/types"
 import type { SpriteRuntime } from "../engine/types"
 import type { Runtime } from "../engine/runtime"
-import { programToPseudo, type PseudocodeSection } from "../engine/pseudocode-generator"
+import { programToClassCode } from "../codegen/class-code-generator"
 import { compileProgramFromProjectData } from "../engine/program-builder"
 
 type DebugTab = "ast" | "sprites" | "variables" | "vm" | "pseudocode"
@@ -544,76 +544,42 @@ function SummaryCard({ label, value, color }: { label: string; value: number; co
 // 疑似コードタブ
 // ============================================================
 
-function PseudocodeSectionCard({ section }: { section: PseudocodeSection }) {
-  const isProcedure = section.kind === "procedure"
-  const style = isProcedure
-    ? { bg: "#FCE4EC", text: "#C62828", border: "#EF9A9A" }
-    : OPCODE_COLORS.event
-
-  return (
-    <div className="rounded-lg border overflow-hidden" style={{ borderColor: style.border }}>
-      <div
-        className="flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-mono"
-        style={{ backgroundColor: style.bg, color: style.text }}
-      >
-        <span className="text-sm">{isProcedure ? "📦" : "🏴"}</span>
-        <span className="font-bold">{section.header}</span>
-      </div>
-      <div className="p-2 bg-white">
-        {section.lines.length === 0 ? (
-          <div className="text-[10px] text-zinc-400 italic">(空)</div>
-        ) : (
-          <pre className="text-[11px] font-mono leading-relaxed whitespace-pre text-zinc-800">
-            {section.lines.join("\n")}
-          </pre>
-        )}
-      </div>
-    </div>
-  )
-}
-
 function PseudocodeView({ runtimeRef: _runtimeRef }: { runtimeRef: React.RefObject<Runtime | null> }) {
   const sprites = useAppSelector((s) => s.sprites.list)
   const selectedSpriteId = useAppSelector((s) => s.sprites.selectedId)
   const blockDataMap = useAppSelector((s) => s.sprites.blockDataMap)
-  const [grouped, setGrouped] = useState<Record<string, PseudocodeSection[]>>({})
+  const [fullCode, setFullCode] = useState<string>("")
   const [error, setError] = useState<string | null>(null)
 
   const refresh = useCallback(() => {
     try {
-      const result: Record<string, PseudocodeSection[]> = {}
+      const classCodes: string[] = []
 
       for (const sprite of sprites) {
-        let sections: PseudocodeSection[]
+        let program: CompiledProgram | null = null
 
         if (sprite.id === selectedSpriteId) {
-          // 選択中のスプライト → controller から直接ビルド
           const controller = getController()
           if (controller) {
-            sections = programToPseudo(buildScripts(controller))
-          } else {
-            sections = []
+            program = buildScripts(controller)
           }
         } else {
-          // 非選択スプライト → blockDataMap からコンパイル
           const data = blockDataMap[sprite.id]
           if (data && data.workspace.blocks.length > 0) {
             try {
-              sections = programToPseudo(compileProgramFromProjectData(data))
+              program = compileProgramFromProjectData(data)
             } catch {
-              sections = []
+              // コンパイルエラーはスキップ
             }
-          } else {
-            sections = []
           }
         }
 
-        if (sections.length > 0) {
-          result[sprite.name] = sections
+        if (program && program.eventScripts.length > 0) {
+          classCodes.push(programToClassCode(program, sprite.name))
         }
       }
 
-      setGrouped(result)
+      setFullCode(classCodes.join("\n\n"))
       setError(null)
     } catch (e) {
       setError(String(e))
@@ -626,40 +592,41 @@ function PseudocodeView({ runtimeRef: _runtimeRef }: { runtimeRef: React.RefObje
     return () => clearInterval(id)
   }, [refresh])
 
-  const entries = Object.entries(grouped)
+  const handleCopy = useCallback(() => {
+    navigator.clipboard.writeText(fullCode)
+  }, [fullCode])
 
   return (
     <div className="p-2 text-xs">
       <div className="flex items-center justify-between mb-2">
         <span className="font-semibold text-muted-foreground">全体の疑似コード</span>
-        <button
-          onClick={refresh}
-          className="px-2 py-0.5 rounded bg-zinc-100 hover:bg-zinc-200 text-[10px] font-medium"
-        >
-          更新
-        </button>
+        <div className="flex gap-1">
+          <button
+            onClick={handleCopy}
+            className="px-2 py-0.5 rounded bg-zinc-100 hover:bg-zinc-200 text-[10px] font-medium"
+          >
+            コピー
+          </button>
+          <button
+            onClick={refresh}
+            className="px-2 py-0.5 rounded bg-zinc-100 hover:bg-zinc-200 text-[10px] font-medium"
+          >
+            更新
+          </button>
+        </div>
       </div>
       {error && (
         <div className="p-2 mb-2 bg-red-50 border border-red-200 rounded text-red-700 text-[10px]">
           {error}
         </div>
       )}
-      {entries.length === 0 ? (
+      {fullCode.length === 0 ? (
         <div className="text-zinc-400 text-center py-4">スクリプトなし</div>
       ) : (
-        <div className="space-y-4">
-          {entries.map(([spriteName, sections]) => (
-            <div key={spriteName}>
-              <div className="font-bold text-[11px] mb-1 px-1 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200">
-                🎭 {spriteName}
-              </div>
-              <div className="space-y-2 ml-1">
-                {sections.map((section, i) => (
-                  <PseudocodeSectionCard key={i} section={section} />
-                ))}
-              </div>
-            </div>
-          ))}
+        <div className="rounded-lg border border-zinc-200 overflow-hidden">
+          <pre className="p-3 bg-zinc-50 text-[11px] font-mono leading-relaxed whitespace-pre overflow-x-auto text-zinc-800">
+            {fullCode}
+          </pre>
         </div>
       )}
     </div>

@@ -41,7 +41,7 @@ function createBuiltinBlockDefs() {
 
     { category: "motion", name: "Move", opcode: "motion_movesteps", shape: "stack", color: "#4C97FF", inputs: [{ type: "number", default: 10 }, { type: "label", text: "steps" }] },
     { category: "motion", name: "Turn ↻", opcode: "motion_turnright", shape: "stack", color: "#4C97FF", inputs: [{ type: "number", default: 15 }, { type: "label", text: "degrees" }] },
-    { category: "motion", name: "Go to x:", opcode: "motion_gotoxy", shape: "stack", color: "#4C97FF", inputs: [{ type: "number", default: 0 }, { type: "label", text: "y:" }, { type: "number", default: 0 }] },
+    { category: "motion", name: "Go to", opcode: "motion_gotoxy", shape: "stack", color: "#4C97FF", inputs: [{ type: "label", text: "x:" }, { type: "number", default: 0 }, { type: "label", text: "y:" }, { type: "number", default: 0 }] },
     { category: "motion", name: "Glide", opcode: "motion_glidesecstoxy", shape: "stack", color: "#4C97FF", inputs: [{ type: "number", default: 1 }, { type: "label", text: "secs to x:" }, { type: "number", default: 0 }, { type: "label", text: "y:" }, { type: "number", default: 0 }] },
     { category: "motion", name: "Change x by", opcode: "motion_changexby", shape: "stack", color: "#4C97FF", inputs: [{ type: "number", default: 10 }] },
     { category: "motion", name: "Change y by", opcode: "motion_changeyby", shape: "stack", color: "#4C97FF", inputs: [{ type: "number", default: 10 }] },
@@ -54,6 +54,7 @@ function createBuiltinBlockDefs() {
 
     { category: "looks", name: "Say", opcode: "looks_sayforsecs", shape: "stack", color: "#9966FF", inputs: [{ type: "text", default: "Hello!" }, { type: "label", text: "for" }, { type: "number", default: 2 }, { type: "label", text: "seconds" }] },
     { category: "looks", name: "Think", opcode: "looks_think", shape: "stack", color: "#9966FF", inputs: [{ type: "text", default: "Hmm..." }] },
+    { category: "looks", name: "Print", opcode: "looks_print", shape: "stack", color: "#9966FF", inputs: [{ type: "text", default: "hello" }] },
     { category: "looks", name: "Set size to", opcode: "looks_setsizeto", shape: "stack", color: "#9966FF", inputs: [{ type: "number", default: 100 }, { type: "label", text: "%" }] },
     { category: "looks", name: "Show", opcode: "looks_show", shape: "stack", color: "#9966FF", inputs: [] },
     { category: "looks", name: "Hide", opcode: "looks_hide", shape: "stack", color: "#9966FF", inputs: [] },
@@ -175,7 +176,7 @@ function createBuiltinBlockDefs() {
     // --- 物理 ---
     { category: "physics", name: "Set physics", opcode: "physics_setmode", shape: "stack", color: "#FF4D6A", inputs: [{ type: "dropdown", default: "dynamic", options: ["dynamic", "static", "none"] }] },
     { category: "physics", name: "Set gravity to", opcode: "physics_setgravity", shape: "stack", color: "#FF4D6A", inputs: [{ type: "number", default: 500 }] },
-    { category: "physics", name: "Set velocity x:", opcode: "physics_setvelocity", shape: "stack", color: "#FF4D6A", inputs: [{ type: "number", default: 0 }, { type: "label", text: "y:" }, { type: "number", default: 0 }] },
+    { category: "physics", name: "Set velocity", opcode: "physics_setvelocity", shape: "stack", color: "#FF4D6A", inputs: [{ type: "label", text: "x:" }, { type: "number", default: 0 }, { type: "label", text: "y:" }, { type: "number", default: 0 }] },
     { category: "physics", name: "Set velocity x to", opcode: "physics_setvelocityX", shape: "stack", color: "#FF4D6A", inputs: [{ type: "number", default: 0 }] },
     { category: "physics", name: "Set velocity y to", opcode: "physics_setvelocityY", shape: "stack", color: "#FF4D6A", inputs: [{ type: "number", default: -300 }] },
     { category: "physics", name: "Velocity x", opcode: "physics_velocityX", shape: "reporter", color: "#FF4D6A", inputs: [] },
@@ -199,7 +200,7 @@ function createBuiltinBlockDefs() {
     { category: "looks", name: "Floating text", opcode: "looks_floatingtext", shape: "stack", color: "#9966FF", inputs: [{ type: "text", default: "+10" }] },
 
     // --- グラフィックス描画 ---
-    { category: "looks", name: "Fill rect x:", opcode: "graphics_fillrect", shape: "stack", color: "#9966FF", inputs: [{ type: "number", default: 0 }, { type: "label", text: "y:" }, { type: "number", default: 0 }, { type: "label", text: "w:" }, { type: "number", default: 100 }, { type: "label", text: "h:" }, { type: "number", default: 20 }, { type: "label", text: "color:" }, { type: "text", default: "#00ff00" }] },
+    { category: "looks", name: "Fill rect", opcode: "graphics_fillrect", shape: "stack", color: "#9966FF", inputs: [{ type: "label", text: "x:" }, { type: "number", default: 0 }, { type: "label", text: "y:" }, { type: "number", default: 0 }, { type: "label", text: "w:" }, { type: "number", default: 100 }, { type: "label", text: "h:" }, { type: "number", default: 20 }, { type: "label", text: "color:" }, { type: "text", default: "#00ff00" }] },
     { category: "looks", name: "Clear graphics", opcode: "graphics_clear", shape: "stack", color: "#9966FF", inputs: [] },
 
     // --- 衝突イベント（ハット） ---
@@ -209,7 +210,83 @@ function createBuiltinBlockDefs() {
     { category: "control", name: "Restart game", opcode: "control_restart", shape: "stack", color: "#FFAB19", inputs: [] },
 
     // --- モーション拡張 ---
-    { category: "motion", name: "Tween to x:", opcode: "motion_tweento", shape: "stack", color: "#4C97FF", inputs: [{ type: "number", default: 0 }, { type: "label", text: "y:" }, { type: "number", default: 0 }, { type: "label", text: "in" }, { type: "number", default: 1 }, { type: "label", text: "secs" }] },
+    { category: "motion", name: "Tween to", opcode: "motion_tweento", shape: "stack", color: "#4C97FF", inputs: [{ type: "label", text: "x:" }, { type: "number", default: 0 }, { type: "label", text: "y:" }, { type: "number", default: 0 }, { type: "label", text: "in" }, { type: "number", default: 1 }, { type: "label", text: "secs" }] },
+
+    // --- 回転 ---
+    { category: "motion", name: "Set angle to", opcode: "motion_setangle", shape: "stack", color: "#4C97FF", inputs: [{ type: "number", default: 0 }] },
+    { category: "motion", name: "Angle", opcode: "motion_angle", shape: "reporter", color: "#4C97FF", inputs: [] },
+
+    // --- カメラ ---
+    { category: "camera", name: "Camera follow me", opcode: "camera_follow", shape: "stack", color: "#3D9970", inputs: [] },
+    { category: "camera", name: "Camera stop follow", opcode: "camera_stopfollow", shape: "stack", color: "#3D9970", inputs: [] },
+    { category: "camera", name: "Camera shake", opcode: "camera_shake", shape: "stack", color: "#3D9970", inputs: [{ type: "number", default: 200 }, { type: "label", text: "ms intensity:" }, { type: "number", default: 0.01 }] },
+    { category: "camera", name: "Camera zoom", opcode: "camera_zoom", shape: "stack", color: "#3D9970", inputs: [{ type: "number", default: 1 }] },
+    { category: "camera", name: "Camera fade", opcode: "camera_fade", shape: "stack", color: "#3D9970", inputs: [{ type: "number", default: 1000 }, { type: "label", text: "ms" }] },
+
+    // --- Tween 拡張 ---
+    { category: "looks", name: "Tween scale to", opcode: "tween_scale", shape: "stack", color: "#9966FF", inputs: [{ type: "number", default: 2 }, { type: "label", text: "in" }, { type: "number", default: 1 }, { type: "label", text: "secs" }] },
+    { category: "looks", name: "Tween alpha to", opcode: "tween_alpha", shape: "stack", color: "#9966FF", inputs: [{ type: "number", default: 0.5 }, { type: "label", text: "in" }, { type: "number", default: 1 }, { type: "label", text: "secs" }] },
+    { category: "looks", name: "Tween angle to", opcode: "tween_angle", shape: "stack", color: "#9966FF", inputs: [{ type: "number", default: 360 }, { type: "label", text: "in" }, { type: "number", default: 1 }, { type: "label", text: "secs" }] },
+
+    // --- 数学 ---
+    { category: "operators", name: "Random int", opcode: "math_randomint", shape: "reporter", color: "#59C059", inputs: [{ type: "number", default: 1 }, { type: "label", text: "to" }, { type: "number", default: 100 }] },
+    { category: "operators", name: "Angle to", opcode: "math_angleto", shape: "reporter", color: "#59C059", inputs: [{ type: "text", default: "プレイヤー" }] },
+    { category: "operators", name: "Distance to", opcode: "math_distanceto", shape: "reporter", color: "#59C059", inputs: [{ type: "text", default: "プレイヤー" }] },
+    { category: "operators", name: "Abs", opcode: "math_abs", shape: "reporter", color: "#59C059", inputs: [{ type: "number", default: 0 }] },
+    { category: "operators", name: "Min", opcode: "math_min", shape: "reporter", color: "#59C059", inputs: [{ type: "number", default: 0 }, { type: "number", default: 0 }] },
+    { category: "operators", name: "Max", opcode: "math_max", shape: "reporter", color: "#59C059", inputs: [{ type: "number", default: 0 }, { type: "number", default: 0 }] },
+    { category: "operators", name: "Sin", opcode: "math_sin", shape: "reporter", color: "#59C059", inputs: [{ type: "number", default: 0 }] },
+    { category: "operators", name: "Cos", opcode: "math_cos", shape: "reporter", color: "#59C059", inputs: [{ type: "number", default: 0 }] },
+
+    // --- タイマー ---
+    { category: "control", name: "Set interval", opcode: "timer_setinterval", shape: "stack", color: "#FFAB19", inputs: [{ type: "text", default: "tick" }, { type: "label", text: "every" }, { type: "number", default: 1000 }, { type: "label", text: "ms" }] },
+    { category: "control", name: "Clear interval", opcode: "timer_clearinterval", shape: "stack", color: "#FFAB19", inputs: [{ type: "text", default: "tick" }] },
+    { category: "control", name: "Set timeout", opcode: "timer_settimeout", shape: "stack", color: "#FFAB19", inputs: [{ type: "text", default: "delayed" }, { type: "label", text: "after" }, { type: "number", default: 1000 }, { type: "label", text: "ms" }] },
+
+    // --- テキスト拡張 ---
+    { category: "looks", name: "Add text", opcode: "text_addat", shape: "stack", color: "#9966FF", inputs: [{ type: "text", default: "score" }, { type: "label", text: ":" }, { type: "text", default: "SCORE: 0" }, { type: "label", text: "x:" }, { type: "number", default: 0 }, { type: "label", text: "y:" }, { type: "number", default: 0 }, { type: "label", text: "size:" }, { type: "number", default: 24 }, { type: "label", text: "color:" }, { type: "text", default: "#ffffff" }] },
+    { category: "looks", name: "Update text", opcode: "text_updateat", shape: "stack", color: "#9966FF", inputs: [{ type: "text", default: "score" }, { type: "label", text: "to" }, { type: "text", default: "SCORE: 10" }] },
+    { category: "looks", name: "Remove text", opcode: "text_removeat", shape: "stack", color: "#9966FF", inputs: [{ type: "text", default: "score" }] },
+
+    // --- パーティクル ---
+    { category: "looks", name: "Emit particles", opcode: "particle_emit", shape: "stack", color: "#9966FF", inputs: [{ type: "label", text: "x:" }, { type: "number", default: 0 }, { type: "label", text: "y:" }, { type: "number", default: 0 }, { type: "label", text: "count:" }, { type: "number", default: 20 }, { type: "label", text: "color:" }, { type: "text", default: "#ff6600" }, { type: "label", text: "speed:" }, { type: "number", default: 200 }] },
+
+    // --- Phase 1: 物理プロパティ拡張 ---
+    { category: "physics", name: "Set acceleration", opcode: "physics_setacceleration", shape: "stack", color: "#FF4D6A", inputs: [{ type: "label", text: "x:" }, { type: "number", default: 0 }, { type: "label", text: "y:" }, { type: "number", default: 0 }] },
+    { category: "physics", name: "Set acceleration x to", opcode: "physics_setaccelerationx", shape: "stack", color: "#FF4D6A", inputs: [{ type: "number", default: 0 }] },
+    { category: "physics", name: "Set acceleration y to", opcode: "physics_setaccelerationy", shape: "stack", color: "#FF4D6A", inputs: [{ type: "number", default: 0 }] },
+    { category: "physics", name: "Set drag", opcode: "physics_setdrag", shape: "stack", color: "#FF4D6A", inputs: [{ type: "label", text: "x:" }, { type: "number", default: 100 }, { type: "label", text: "y:" }, { type: "number", default: 100 }] },
+    { category: "physics", name: "Set damping", opcode: "physics_setdamping", shape: "stack", color: "#FF4D6A", inputs: [{ type: "dropdown", default: "on", options: ["on", "off"] }] },
+    { category: "physics", name: "Set max velocity", opcode: "physics_setmaxvelocity", shape: "stack", color: "#FF4D6A", inputs: [{ type: "label", text: "x:" }, { type: "number", default: 200 }, { type: "label", text: "y:" }, { type: "number", default: 200 }] },
+    { category: "physics", name: "Set angular velocity", opcode: "physics_setangularvelocity", shape: "stack", color: "#FF4D6A", inputs: [{ type: "number", default: 0 }, { type: "label", text: "deg/s" }] },
+    { category: "physics", name: "Set immovable", opcode: "physics_setimmovable", shape: "stack", color: "#FF4D6A", inputs: [{ type: "dropdown", default: "on", options: ["on", "off"] }] },
+    { category: "physics", name: "Set mass to", opcode: "physics_setmass", shape: "stack", color: "#FF4D6A", inputs: [{ type: "number", default: 1 }] },
+    { category: "physics", name: "Speed", opcode: "physics_speed", shape: "reporter", color: "#FF4D6A", inputs: [] },
+    { category: "physics", name: "Set pushable", opcode: "physics_setpushable", shape: "stack", color: "#FF4D6A", inputs: [{ type: "dropdown", default: "on", options: ["on", "off"] }] },
+    { category: "physics", name: "World wrap padding:", opcode: "physics_worldwrap", shape: "stack", color: "#FF4D6A", inputs: [{ type: "number", default: 32 }] },
+
+    // --- Phase 2: 高度な物理操作 ---
+    { category: "physics", name: "Move to", opcode: "physics_moveto", shape: "stack", color: "#FF4D6A", inputs: [{ type: "dropdown", default: "プレイヤー", options: ["プレイヤー"] }, { type: "label", text: "at speed" }, { type: "number", default: 200 }] },
+    { category: "physics", name: "Accelerate to", opcode: "physics_accelerateto", shape: "stack", color: "#FF4D6A", inputs: [{ type: "dropdown", default: "プレイヤー", options: ["プレイヤー"] }, { type: "label", text: "at" }, { type: "number", default: 100 }] },
+    { category: "physics", name: "Velocity from angle", opcode: "physics_velocityfromangle", shape: "stack", color: "#FF4D6A", inputs: [{ type: "number", default: 0 }, { type: "label", text: "speed:" }, { type: "number", default: 200 }] },
+
+    // --- Phase 3: 入力拡張 ---
+    { category: "sensing", name: "Mouse down?", opcode: "sensing_mousedown", shape: "boolean", color: "#5CB1D6", inputs: [] },
+    { category: "sensing", name: "Mouse wheel", opcode: "sensing_mousewheel", shape: "reporter", color: "#5CB1D6", inputs: [] },
+    { category: "sensing", name: "Key", opcode: "sensing_keyjustdown", shape: "boolean", color: "#5CB1D6", inputs: [{ type: "dropdown", default: "space", options: K }, { type: "label", text: "just pressed?" }] },
+    { category: "sensing", name: "Enable drag", opcode: "sensing_enabledrag", shape: "stack", color: "#5CB1D6", inputs: [] },
+
+    // --- Phase 4: アニメーション拡張 ---
+    { category: "looks", name: "Create anim", opcode: "anim_create", shape: "stack", color: "#9966FF", inputs: [{ type: "text", default: "walk" }, { type: "label", text: "frames:" }, { type: "number", default: 0 }, { type: "label", text: "to" }, { type: "number", default: 3 }, { type: "label", text: "rate:" }, { type: "number", default: 10 }, { type: "label", text: "loop:" }, { type: "dropdown", default: "on", options: ["on", "off"] }] },
+    { category: "looks", name: "Play anim", opcode: "anim_play", shape: "stack", color: "#9966FF", inputs: [{ type: "text", default: "walk" }] },
+    { category: "looks", name: "Stop anim", opcode: "anim_stop", shape: "stack", color: "#9966FF", inputs: [] },
+    { category: "looks", name: "On anim complete send", opcode: "anim_oncomplete", shape: "stack", color: "#9966FF", inputs: [{ type: "dropdown", default: "anim_done", options: EVT }] },
+
+    // --- Phase 5: オーディオ ---
+    { category: "sound", name: "Play sound", opcode: "sound_play", shape: "stack", color: "#D65CD6", inputs: [{ type: "dropdown", default: "beep", options: ["beep", "coin", "jump", "hit", "laser", "powerup", "explosion"] }] },
+    { category: "sound", name: "Play sound loop", opcode: "sound_playloop", shape: "stack", color: "#D65CD6", inputs: [{ type: "dropdown", default: "beep", options: ["beep", "coin", "jump", "hit", "laser", "powerup", "explosion"] }] },
+    { category: "sound", name: "Stop sound", opcode: "sound_stop", shape: "stack", color: "#D65CD6", inputs: [{ type: "dropdown", default: "beep", options: ["beep", "coin", "jump", "hit", "laser", "powerup", "explosion"] }] },
+    { category: "sound", name: "Set volume", opcode: "sound_setvolume", shape: "stack", color: "#D65CD6", inputs: [{ type: "dropdown", default: "beep", options: ["beep", "coin", "jump", "hit", "laser", "powerup", "explosion"] }, { type: "label", text: "to" }, { type: "number", default: 50 }, { type: "label", text: "%" }] },
   ]
 
   return defs.map((def, index) => {
@@ -242,6 +319,8 @@ export const SPRITE_DROPDOWN_OPCODES: Record<string, { prefixOptions: string[]; 
   clone_create: { prefixOptions: ["myself"], inputIndex: 0 },
   physics_oncollide: { prefixOptions: ["any"], inputIndex: 0 },
   event_whentouched: { prefixOptions: ["any"], inputIndex: 0 },
+  physics_moveto: { prefixOptions: [], inputIndex: 0 },
+  physics_accelerateto: { prefixOptions: [], inputIndex: 0 },
 }
 
 function injectSpriteNames(defs: BlockDef[], spriteNames: string[]): BlockDef[] {

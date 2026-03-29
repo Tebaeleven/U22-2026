@@ -24,6 +24,7 @@ export function physics_setvelocity(args: BlockArgs, util: BlockUtil) {
   const sprite = util.getSprite()
   sprite.velocityX = vx
   sprite.velocityY = vy
+  sprite._velocityDirty = true
 }
 
 /** X 方向の速度のみ設定 */
@@ -31,6 +32,7 @@ export function physics_setvelocityX(args: BlockArgs, util: BlockUtil) {
   const vx = Number(args.VX ?? 0)
   const sprite = util.getSprite()
   sprite.velocityX = vx
+  sprite._velocityDirty = true
 }
 
 /** Y 方向の速度のみ設定 */
@@ -38,6 +40,7 @@ export function physics_setvelocityY(args: BlockArgs, util: BlockUtil) {
   const vy = Number(args.VY ?? 0)
   const sprite = util.getSprite()
   sprite.velocityY = vy
+  sprite._velocityDirty = true
 }
 
 /** 現在の X 速度を返す */
@@ -68,7 +71,8 @@ export function physics_setbounce(args: BlockArgs, util: BlockUtil) {
 
 /** ワールド境界との衝突を設定 */
 export function physics_setcollideworldbounds(args: BlockArgs, util: BlockUtil) {
-  const enabled = String(args.ENABLED ?? "on") === "on"
+  const val = args.ENABLED ?? "on"
+  const enabled = val === true || val === "on" || val === "true"
   const sprite = util.getSprite()
   sprite.collideWorldBounds = enabled
   const scene = util.getScene()
@@ -107,9 +111,155 @@ export function physics_collisiontarget(_args: BlockArgs, util: BlockUtil): stri
 
 /** 個別の重力有効/無効 */
 export function physics_setallowgravity(args: BlockArgs, util: BlockUtil) {
-  const enabled = String(args.ENABLED ?? "on") === "on"
+  const val = args.ENABLED ?? "on"
+  const enabled = val === true || val === "on" || val === "true"
   const sprite = util.getSprite()
   sprite.allowGravity = enabled
   const scene = util.getScene()
   if (scene) scene.setSpriteAllowGravity(sprite.id, enabled)
+}
+
+// ── Phase 1: 物理プロパティ拡張 ──────────────────────────
+
+/** 加速度を設定 (x, y) */
+export function physics_setacceleration(args: BlockArgs, util: BlockUtil) {
+  const ax = Number(args.AX ?? 0)
+  const ay = Number(args.AY ?? 0)
+  const sprite = util.getSprite()
+  sprite.accelerationX = ax
+  sprite.accelerationY = ay
+  const scene = util.getScene()
+  if (scene) scene.setSpriteAcceleration(sprite.id, ax, ay)
+}
+
+/** X方向の加速度のみ設定 */
+export function physics_setaccelerationx(args: BlockArgs, util: BlockUtil) {
+  const ax = Number(args.AX ?? 0)
+  const sprite = util.getSprite()
+  sprite.accelerationX = ax
+  const scene = util.getScene()
+  if (scene) scene.setSpriteAcceleration(sprite.id, ax, sprite.accelerationY)
+}
+
+/** Y方向の加速度のみ設定 */
+export function physics_setaccelerationy(args: BlockArgs, util: BlockUtil) {
+  const ay = Number(args.AY ?? 0)
+  const sprite = util.getSprite()
+  sprite.accelerationY = ay
+  const scene = util.getScene()
+  if (scene) scene.setSpriteAcceleration(sprite.id, sprite.accelerationX, ay)
+}
+
+/** 抗力（ドラッグ）を設定 */
+export function physics_setdrag(args: BlockArgs, util: BlockUtil) {
+  const dx = Number(args.DX ?? 0)
+  const dy = Number(args.DY ?? 0)
+  const sprite = util.getSprite()
+  sprite.dragX = dx
+  sprite.dragY = dy
+  const scene = util.getScene()
+  if (scene) scene.setSpriteDrag(sprite.id, dx, dy)
+}
+
+/** ダンピングモードを有効/無効 */
+export function physics_setdamping(args: BlockArgs, util: BlockUtil) {
+  const val = args.ENABLED ?? "on"
+  const enabled = val === true || val === "on" || val === "true"
+  const sprite = util.getSprite()
+  sprite.useDamping = enabled
+  const scene = util.getScene()
+  if (scene) scene.setSpriteDamping(sprite.id, enabled)
+}
+
+/** 最大速度を設定 */
+export function physics_setmaxvelocity(args: BlockArgs, util: BlockUtil) {
+  const vx = Number(args.VX ?? 10000)
+  const vy = Number(args.VY ?? 10000)
+  const sprite = util.getSprite()
+  sprite.maxVelocityX = vx
+  sprite.maxVelocityY = vy
+  const scene = util.getScene()
+  if (scene) scene.setSpriteMaxVelocity(sprite.id, vx, vy)
+}
+
+/** 角速度を設定 (deg/s) */
+export function physics_setangularvelocity(args: BlockArgs, util: BlockUtil) {
+  const deg = Number(args.DEG ?? 0)
+  const sprite = util.getSprite()
+  sprite.angularVelocity = deg
+  const scene = util.getScene()
+  if (scene) scene.setSpriteAngularVelocity(sprite.id, deg)
+}
+
+/** 不動体設定 */
+export function physics_setimmovable(args: BlockArgs, util: BlockUtil) {
+  const val = args.ENABLED ?? "on"
+  const enabled = val === true || val === "on" || val === "true"
+  const sprite = util.getSprite()
+  sprite.immovable = enabled
+  const scene = util.getScene()
+  if (scene) scene.setSpriteImmovable(sprite.id, enabled)
+}
+
+/** 質量を設定 */
+export function physics_setmass(args: BlockArgs, util: BlockUtil) {
+  const mass = Math.max(0.1, Number(args.MASS ?? 1))
+  const sprite = util.getSprite()
+  sprite.mass = mass
+  const scene = util.getScene()
+  if (scene) scene.setSpriteMass(sprite.id, mass)
+}
+
+/** 速度の大きさを返す */
+export function physics_speed(_args: BlockArgs, util: BlockUtil): number {
+  const scene = util.getScene()
+  if (!scene) return 0
+  return scene.getSpriteSpeed(util.getSprite().id)
+}
+
+/** 押し出し可否を設定 */
+export function physics_setpushable(args: BlockArgs, util: BlockUtil) {
+  const val = args.ENABLED ?? "on"
+  const enabled = val === true || val === "on" || val === "true"
+  const sprite = util.getSprite()
+  sprite.pushable = enabled
+  const scene = util.getScene()
+  if (scene) scene.setSpritePushable(sprite.id, enabled)
+}
+
+/** ワールドラップ（画面端を超えたら反対側から出てくる） */
+export function physics_worldwrap(args: BlockArgs, util: BlockUtil) {
+  const padding = Number(args.PADDING ?? 0)
+  const scene = util.getScene()
+  if (scene) scene.worldWrap(util.getSprite().id, padding)
+}
+
+// ── Phase 2: 高度な物理操作 ──────────────────────────────
+
+/** ターゲットスプライトに向かって移動 */
+export function physics_moveto(args: BlockArgs, util: BlockUtil) {
+  const targetName = String(args.TARGET ?? "")
+  const speed = Number(args.SPEED ?? 200)
+  const target = util.getSpriteByName(targetName)
+  if (!target) return
+  const scene = util.getScene()
+  if (scene) scene.moveToObject(util.getSprite().id, target.x, target.y, speed)
+}
+
+/** ターゲットスプライトに向かって加速 */
+export function physics_accelerateto(args: BlockArgs, util: BlockUtil) {
+  const targetName = String(args.TARGET ?? "")
+  const accel = Number(args.SPEED ?? 100)
+  const target = util.getSpriteByName(targetName)
+  if (!target) return
+  const scene = util.getScene()
+  if (scene) scene.accelerateToObject(util.getSprite().id, target.x, target.y, accel)
+}
+
+/** 角度から速度を設定 */
+export function physics_velocityfromangle(args: BlockArgs, util: BlockUtil) {
+  const angle = Number(args.ANGLE ?? 0)
+  const speed = Number(args.SPEED ?? 200)
+  const scene = util.getScene()
+  if (scene) scene.velocityFromAngle(util.getSprite().id, angle, speed)
 }

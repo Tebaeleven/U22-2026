@@ -12,6 +12,8 @@ export const BLOCK_CATEGORIES: { id: BlockCategory; name: string; color: string 
   { id: "lists", name: "リスト", color: "#FF661A" },
   { id: "myblocks", name: "マイブロック", color: "#FF6680" },
   { id: "physics", name: "物理", color: "#FF4D6A" },
+  { id: "camera", name: "カメラ", color: "#3D9970" },
+  { id: "sound", name: "音", color: "#D65CD6" },
 ]
 
 export type BlockCategoryId = BlockCategory
@@ -58,6 +60,15 @@ export interface ColliderDef {
   radius?: number
 }
 
+// ─── サウンド定義 ─────────────────────────────────
+
+export interface SoundDef {
+  id: string
+  name: string
+  /** Base64 エンコードされた音声データ（data URL） */
+  dataUrl: string
+}
+
 // ─── スプライト定義 ─────────────────────────────────
 
 export interface SpriteDef {
@@ -67,6 +78,8 @@ export interface SpriteDef {
   costumes: Costume[]
   currentCostumeIndex: number
   collider: ColliderDef
+  /** サウンドアセット */
+  sounds?: SoundDef[]
   x: number
   y: number
   size: number
