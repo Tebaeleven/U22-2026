@@ -85,3 +85,65 @@ export function operator_mod(args: BlockArgs, _util: BlockUtil): number {
 export function operator_round(args: BlockArgs, _util: BlockUtil): number {
   return Math.round(Number(args.NUM) || 0)
 }
+
+/** ◯ ≥ ◯ */
+export function operator_gte(args: BlockArgs, _util: BlockUtil): boolean {
+  return (Number(args.OPERAND1) || 0) >= (Number(args.OPERAND2) || 0)
+}
+
+/** ◯ ≤ ◯ */
+export function operator_lte(args: BlockArgs, _util: BlockUtil): boolean {
+  return (Number(args.OPERAND1) || 0) <= (Number(args.OPERAND2) || 0)
+}
+
+/** ◯ ≠ ◯ */
+export function operator_neq(args: BlockArgs, _util: BlockUtil): boolean {
+  return String(args.OPERAND1) !== String(args.OPERAND2)
+}
+
+/** _の_番目の文字 */
+export function operator_letter_of(args: BlockArgs, _util: BlockUtil): string {
+  const str = String(args.STRING ?? "")
+  const index = Number(args.INDEX ?? 1) - 1
+  if (index < 0 || index >= str.length) return ""
+  return str[index]
+}
+
+/** _に_が含まれる */
+export function operator_contains(args: BlockArgs, _util: BlockUtil): boolean {
+  return String(args.STRING1 ?? "").includes(String(args.STRING2 ?? ""))
+}
+
+/** 部分文字列 */
+export function operator_substring(args: BlockArgs, _util: BlockUtil): string {
+  const str = String(args.STRING ?? "")
+  const from = Math.max(0, Number(args.FROM ?? 1) - 1)
+  const len = Number(args.LEN ?? 1)
+  return str.substring(from, from + len)
+}
+
+/** 文字列分割 → リスト */
+export function operator_split(args: BlockArgs, _util: BlockUtil): string[] {
+  const str = String(args.STRING ?? "")
+  const sep = String(args.SEP ?? ",")
+  return str.split(sep)
+}
+
+/** 文字列置換 */
+export function operator_replace(args: BlockArgs, _util: BlockUtil): string {
+  const str = String(args.STRING ?? "")
+  const from = String(args.FROM ?? "")
+  const to = String(args.TO ?? "")
+  return str.replaceAll(from, to)
+}
+
+/** 数値に変換 */
+export function operator_tonum(args: BlockArgs, _util: BlockUtil): number {
+  const val = Number(args.VALUE)
+  return Number.isNaN(val) ? 0 : val
+}
+
+/** 文字列に変換 */
+export function operator_tostr(args: BlockArgs, _util: BlockUtil): string {
+  return String(args.VALUE ?? "")
+}

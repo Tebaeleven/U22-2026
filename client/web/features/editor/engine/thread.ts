@@ -192,14 +192,60 @@ export class Thread {
 
   getLoopVariable(name: string): unknown {
     for (let index = this.frameStack.length - 1; index >= 0; index -= 1) {
-      const loopState = this.frameStack[index]?.forRangeState as
+      const frame = this.frameStack[index]
+      // for-range ループ変数
+      const forRangeState = frame?.forRangeState as
         | { name?: unknown; activeValue?: unknown }
         | undefined
-      if (loopState?.name === name) {
-        return loopState.activeValue
+      if (forRangeState?.name === name) {
+        return forRangeState.activeValue
+      }
+      // for-each ループ変数
+      const forEachState = frame?.forEachState as
+        | { name?: unknown; activeValue?: unknown }
+        | undefined
+      if (forEachState?.name === name) {
+        return forEachState.activeValue
       }
     }
     return undefined
+  }
+
+  /** 直近のループを抜ける（break） */
+  breakCurrentLoop() {
+    // blockStack を遡り、ループブロック（C-block で body を持つもの）を見つけて pop
+    // ループブロック = frameStack に loopCounter, forRangeState, forEachState のいずれかを持つ
+    while (this.blockStack.length > 0) {
+      const frame = this.frameStack[this.frameStack.length - 1]
+      const isLoopFrame = frame &&
+        (frame.loopCounter !== undefined || frame.forRangeState !== undefined || frame.forEachState !== undefined)
+      if (isLoopFrame) {
+        // ループブロック自体を pop して次に進む
+        this.popBlock()
+        if (this.blockStack.length === 0) {
+          this.status = "done"
+        }
+        return
+      }
+      this.popBlock()
+    }
+    this.status = "done"
+  }
+
+  /** 直近のループの次のイテレーションへスキップ（continue） */
+  continueCurrentLoop() {
+    // blockStack を遡り、ループブロックまで pop する（ループブロック自体は残す）
+    while (this.blockStack.length > 1) {
+      const parentFrame = this.frameStack[this.frameStack.length - 2]
+      const isParentLoop = parentFrame &&
+        (parentFrame.loopCounter !== undefined || parentFrame.forRangeState !== undefined || parentFrame.forEachState !== undefined)
+      if (isParentLoop) {
+        // 現在のブロック（body 内）を pop → ループブロックに戻る
+        this.popBlock()
+        return
+      }
+      this.popBlock()
+    }
   }
 
   private finishProcedureIfNeeded(): boolean {

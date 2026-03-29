@@ -36,6 +36,10 @@ export type StatementNode =
   | { type: "repeat"; times: ExprNode; body: StatementNode[] }
   | { type: "forever"; body: StatementNode[] }
   | { type: "for"; variable: string; from: ExprNode; to: ExprNode; body: StatementNode[] }
+  | { type: "forEach"; variable: string; list: string; body: StatementNode[] }
+  | { type: "spawn"; body: StatementNode[] }
+  | { type: "break" }
+  | { type: "continue" }
   | { type: "return"; value: ExprNode }
 
 // ── 式（レポーター/値） ──

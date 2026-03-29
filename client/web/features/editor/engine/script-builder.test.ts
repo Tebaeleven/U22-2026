@@ -58,6 +58,9 @@ function createRuntimeSprite(): SpriteRuntime {
     mouseDown: false,
     mouseWheelDelta: 0,
     _velocityDirty: false,
+    currentState: "default",
+    layer: 0,
+    tags: new Set<string>(),
   }
 }
 
@@ -177,6 +180,10 @@ describe("buildScripts", () => {
       addInterval: () => undefined,
       removeInterval: () => undefined,
       addTimeout: () => undefined,
+      spawnThread: () => undefined,
+      switchScene: () => undefined,
+      getCurrentScene: () => "default",
+      setTimeScale: () => undefined,
     }
 
     const sequencer = new Sequencer(callbacks)

@@ -117,6 +117,19 @@ export interface GameSceneProxy {
   enableSpriteDrag(id: string): void
   /** スプライトのドラッグ位置を取得 */
   getSpriteDragPosition(id: string): { x: number; y: number } | null
+  // ── Phase 4: Phaser API 拡張 ──
+  /** 物理ボディのサイズを変更 */
+  setSpriteBodySize(id: string, width: number, height: number): void
+  /** 物理ボディのオフセットを設定 */
+  setSpriteBodyOffset(id: string, ox: number, oy: number): void
+  /** 円形の物理ボディに変更 */
+  setSpriteCircle(id: string, radius: number): void
+  /** スプライトの原点を設定 */
+  setSpriteOrigin(id: string, x: number, y: number): void
+  /** スクロールファクターを設定 */
+  setSpriteScrollFactor(id: string, x: number, y: number): void
+  /** 背景色を設定 */
+  setBackgroundColor(color: string): void
 }
 
 export type BlockArgs = Record<string, unknown>
@@ -182,6 +195,20 @@ export interface BlockUtil {
   removeInterval: (eventName: string) => void
   /** 一定時間後にイベントを発火するタイムアウトを登録 */
   addTimeout: (eventName: string, ms: number) => void
+  // ── 制御拡張 ──
+  /** 直近のループを抜ける */
+  breakLoop: () => void
+  /** 直近のループの次のイテレーションへスキップ */
+  continueLoop: () => void
+  /** body を新スレッドとして生成する */
+  spawnThread: () => void
+  // ── シーン ──
+  /** シーンを切り替える */
+  switchScene: (name: string) => void
+  /** 現在のシーン名を取得 */
+  getCurrentScene: () => string
+  /** タイムスケールを設定 */
+  setTimeScale: (scale: number) => void
 }
 
 export type BlockFunction = (
@@ -296,6 +323,15 @@ export interface SpriteRuntime {
   mouseDown: boolean
   /** マウスホイールのデルタ値 */
   mouseWheelDelta: number
+  // ── 状態マシン ──
+  /** 現在の状態名 */
+  currentState: string
+  // ── レイヤー ──
+  /** 描画レイヤー（大きいほど手前） */
+  layer: number
+  // ── タグ ──
+  /** スプライトに付けられたタグの集合 */
+  tags: Set<string>
   // ── 内部フラグ ──
   /** VM 側で velocity を変更したときに true にする（Phaser への書き戻しを制御） */
   _velocityDirty: boolean

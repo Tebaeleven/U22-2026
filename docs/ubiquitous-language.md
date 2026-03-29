@@ -373,3 +373,167 @@ Stack.topConn → Repeat.bodyEntry1  ボディ内挿入
 | **ブロックデータマップ** | `blockDataMap` (Redux) | スプライトID → プロジェクトデータのマップ。スプライト切り替え時に保存・復元する        |
 
 
+---
+
+## VM / ランタイムエンジン
+
+ブロックの実行を担う仮想マシン。Scratch 3.0 の VM と同様の構造を持つ。
+
+### コア
+
+| 用語               | コード上の型/クラス        | 説明                                                                 |
+| ---------------- | ------------------- | ------------------------------------------------------------------ |
+| **ランタイム**        | `Runtime`           | メインゲームループ。スプライト状態管理、スレッド生成・更新、変数ストア、イベント発火、物理同期を一元管理する |
+| **シーケンサー**       | `Sequencer`         | スレッドの実行スケジューラ。フレームごとのタイムバジェット内でラウンドロビン実行する          |
+| **スレッド**         | `Thread`            | 1つの実行スレッド。ブロックスタック・フレームスタック・手続きフレームを持つ                |
+| **スクリプトブロック**    | `ScriptBlock`       | 実行可能なブロックツリーノード。`id`, `opcode`, `args`, `next`, `branches`, `inputBlocks` を持つ |
+| **コンパイル済みプログラム** | `CompiledProgram`   | コンパイル結果。`eventScripts[]`（イベントスクリプト）と `procedures{}`（手続き定義）を持つ |
+| **ブロック関数**       | `BlockFunction`     | プリミティブの関数シグネチャ: `(args: BlockArgs, util: BlockUtil) => void \| Promise<void> \| unknown` |
+| **ブロックユーティリティ**  | `BlockUtil`         | プリミティブに渡される実行コンテキストAPI。スプライト操作・変数・イベント・分岐制御など約45メソッドを提供 |
+| **ブロックレジストリ**    | `BlockRegistry`     | オペコード → ブロック関数のディスパッチマップ。全プリミティブを起動時に登録する            |
+| **プログラムビルダー**    | `buildProgramsForSprites()` | 全スプライトのスクリプトを一括コンパイルする高レベル関数                        |
+
+### スレッド実行
+
+| 用語              | コード上の型/値                | 説明                                                          |
+| --------------- | ----------------------- | ----------------------------------------------------------- |
+| **スタックフレーム**    | `StackFrame`            | ブロックごとの実行状態。ループカウンタ・タイマー開始時刻などを保持。yield を跨いで状態を維持する |
+| **手続きフレーム**     | `ProcedureFrame`        | 手続き呼び出しフレーム。パラメータバインディング・戻り先を保持する                   |
+| **ブロックスタック**    | `thread.blockStack`     | 現在実行中のブロックのスタック。Cブロック・手続き呼び出しでプッシュされる          |
+| **スレッドステータス**   | `ThreadStatus`          | スレッドの状態。下表参照                                            |
+
+**スレッドステータス一覧:**
+
+| ステータス            | 値               | 説明                                    |
+| ----------------- | ---------------- | ------------------------------------- |
+| **実行中**           | `running`        | アクティブに実行中                              |
+| **イールド**          | `yield`          | 1フレーム一時停止。次フレームで自動再開                   |
+| **イールドティック**      | `yield_tick`     | ループ反復後の一時停止。次フレームで自動再開                 |
+| **Promise待ち**     | `promise_wait`   | Promise の完了を待機中。resolve 時に自動再開         |
+| **完了**            | `done`           | 実行終了。スレッド配列から除去される                     |
+
+**スピードモード:**
+
+| モード    | 値        | 1フレームあたりのステップ回数 | タイムバジェット |
+| ------ | -------- | --------------- | -------- |
+| 通常     | `normal` | 1回              | ~12ms    |
+| 高速     | `fast`   | 3回              | ~14ms    |
+| ターボ    | `turbo`  | 10回             | ~14ms    |
+
+### スプライト・シーン
+
+| 用語              | コード上の型              | 説明                                                              |
+| --------------- | ------------------- | --------------------------------------------------------------- |
+| **スプライトランタイム**  | `SpriteRuntime`     | スプライトの完全な実行時状態。位置・角度・見た目・物理プロパティなど50以上のプロパティを持つ |
+| **スプライト定義**     | `SpriteDef`         | スプライトの定義情報。名前・コスチューム・初期位置などを持つ                      |
+| **ゲームシーンプロキシ**  | `GameSceneProxy`    | Phaser 物理エンジンへのインターフェース。約80メソッドを提供               |
+| **クローン**         | `createClone()`     | スプライトの複製を生成。クローンは独自のスレッドを持ち `clone_whencloned` で開始する |
+
+
+---
+
+## イベント・オブザーバー
+
+### ハットイベント種別
+
+ランタイムがスレッドを生成するトリガーの種類。
+
+| イベント種別       | オペコード                        | スレッド生成タイミング          | Context に渡されるデータ                 |
+| ------------ | ---------------------------- | -------------------- | -------------------------------- |
+| 🏁が押されたとき   | `event_whenflagclicked`      | `Runtime.start()` 時  | なし                               |
+| キーが押されたとき   | `event_whenkeypressed`       | keydown イベント時        | なし                               |
+| 触れたとき       | `event_whentouched`          | 毎フレームのポーリング          | `{ target, otherSprite }`        |
+| クローンされたとき   | `clone_whencloned`           | `createClone()` 完了時  | なし                               |
+| 変数が変わったとき   | `observer_whenvarchanges`    | `setVariable()` 実行時  | `{ newValue, oldValue }`         |
+| イベントを受け取ったとき | `observer_wheneventreceived` | `emitEvent()` 実行時    | `{ eventData }`                  |
+
+### オブザーバーパターン
+
+| 用語            | コード上の関数/型             | 説明                                                     |
+| ------------- | --------------------- | ------------------------------------------------------ |
+| **変数ウォッチャー**  | `observer_whenvarchanges` | 変数値の変更を監視するハットブロック。変更時にスレッドが（再）生成される          |
+| **カスタムイベント**  | `observer_sendevent`  | 名前付きイベントを発火する。データを添付可能                            |
+| **イベントリスナー**  | `observer_wheneventreceived` | カスタムイベントを受信するハットブロック                            |
+| **コンテキスト**    | `thread.context`      | ハットブロックからスレッドに渡されるデータ。`util.getContext(key)` で取得する |
+
+
+---
+
+## プリミティブカテゴリ
+
+ブロック関数の実装モジュール一覧。各ファイルは `engine/primitives/` に配置される。
+
+| カテゴリ            | ファイル               | 主なオペコード例                                    |
+| --------------- | ------------------ | ------------------------------------------- |
+| **モーション**       | `motion.ts`        | `motion_movesteps`, `motion_gotoxy`, `motion_glidesecstoxy` |
+| **見た目**         | `looks.ts`         | `looks_say`, `looks_show`, `looks_hide`, `looks_setsizeto` |
+| **サウンド**        | `sound.ts`         | `sound_play`, `sound_stop`, `sound_volume`  |
+| **イベント**        | `events.ts`        | `event_whenflagclicked`, `event_whenkeypressed` |
+| **制御**          | `control.ts`       | `control_wait`, `control_repeat`, `control_forever`, `control_if`, `control_for_range`, `control_spawn` |
+| **調べる**         | `sensing.ts`       | `sensing_mousex`, `sensing_keypressed`, `sensing_timer` |
+| **演算**          | `operators.ts`     | `operator_add`, `operator_gt`, `operator_and`, `operator_join` |
+| **変数**          | `variables.ts`     | `data_variable`, `data_setvariableto`, `data_addtolist` |
+| **オブザーバー**     | `observer.ts`      | `observer_whenvarchanges`, `observer_sendevent`, `observer_newvalue` |
+| **物理**          | `physics.ts`       | `physics_setvelocity`, `physics_setgravity`, `physics_oncollide` |
+| **クローン**        | `clone.ts`         | `clone_create`, `clone_delete`, `clone_whencloned` |
+| **カメラ**         | `camera.ts`        | `camera_follow`, `camera_shake`, `camera_zoom` |
+| **トゥイーン**       | `tween.ts`         | `tween_scale`, `tween_alpha`, `tween_angle` |
+| **数学**          | `math.ts`          | `math_abs`, `math_lerp`, `math_clamp`, `math_sin`, `math_distanceto` |
+| **タイマー**        | `timer.ts`         | `timer_setinterval`, `timer_settimeout`     |
+| **テキスト**        | `text.ts`          | `text_addat`, `text_updateat`, `text_removeat` |
+| **パーティクル**     | `particle.ts`      | `particle_emit`                             |
+| **アニメーション**    | `anim.ts`          | `anim_create`, `anim_play`, `anim_stop`     |
+| **ステートマシン**    | `state-machine.ts` | `statemachine_enter`, `statemachine_current`, `statemachine_transition` |
+| **シーンユーティリティ** | `scene-util.ts`    | シーン切替、タイムスケール、セーブ/ロード                       |
+| **スプライトユーティリティ** | `sprite-util.ts` | スプライトプロパティ取得/設定、レイヤー、タグ操作                  |
+
+
+---
+
+## コード生成パイプライン
+
+ブロックデータとテキストコード（疑似コード）の相互変換を行うシステム。
+
+### 変換フロー
+
+```
+テキストコード（疑似コード）
+    │
+    ├─ クラス構文 → ClassParser → ClassProgramAST → ASTConverter → ProgramAST
+    │
+    └─ レガシー構文 → PseudocodeParser → ProgramAST
+                                            │
+                                            ↓
+                                      BlockGenerator
+                                            │
+                                            ↓
+                                   BlockProjectData（Map<スプライト名, データ>）
+```
+
+### コンポーネント
+
+| 用語               | コード上の型/関数             | 説明                                                    |
+| ---------------- | --------------------- | ----------------------------------------------------- |
+| **クラスパーサー**      | `ClassParser`         | クラスベースの疑似コードをトークン化し再帰下降で `ClassProgramAST` を生成する |
+| **プログラムAST**     | `ProgramAST`         | レガシー形式の抽象構文木。`SpriteAST[]` の配列                    |
+| **クラスプログラムAST** | `ClassProgramAST`    | クラスベース形式の抽象構文木。`ClassAST[]` の配列                  |
+| **AST変換器**       | `classASTToLegacyAST` | クラスAST → レガシーAST への正規化変換                           |
+| **ブロックジェネレータ**   | `BlockGenerator`     | AST → `SerializedBlockNode[]` 変換。オペコードマッピングを使用      |
+| **疑似コードジェネレータ** | `pseudocodeGenerator` | ブロックデータ → テキストコードへの逆変換                            |
+
+### オペコードマッピング
+
+| マッピング            | コード上の変数        | 説明                                                 |
+| ---------------- | -------------- | -------------------------------------------------- |
+| **関数→オペコード**    | `FUNC_TO_OPCODE` | 関数名 → ブロックオペコード（例: `"move"` → `"motion_movesteps"`） |
+| **レポーターマップ**    | `REPORTER_MAP`   | プロパティ名 → レポーターオペコード（例: `"x"` → `"motion_xposition"`） |
+| **二項演算マップ**     | `BINARY_OP_MAP`  | 演算子 → オペコード（例: `"+"` → `"operator_add"`）           |
+
+### サンプルプロジェクト
+
+| 用語             | コード上の型          | 説明                                                  |
+| -------------- | ---------------- | --------------------------------------------------- |
+| **サンプルプロジェクト** | `SampleProject`  | サンプルの定義。`id`, `name`, `description`, `category`, `sprites`, `pseudocode` を持つ |
+
+サンプルカテゴリ: physics, camera, tweens, particles, timer, input, animation, math, control, sound, games
+

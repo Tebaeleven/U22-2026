@@ -177,3 +177,21 @@ export function looks_print(args: BlockArgs, _util: BlockUtil) {
   const message = String(args.MESSAGE ?? "")
   consoleLog(message)
 }
+
+// ── Phase 4: Phaser API 拡張 ──────────────────────────────
+
+/** スプライトの原点を設定 (Phaser setOrigin 相当) */
+export function looks_setorigin(args: BlockArgs, util: BlockUtil) {
+  const x = Number(args.X ?? 0.5)
+  const y = Number(args.Y ?? 0.5)
+  const scene = util.getScene()
+  if (scene) scene.setSpriteOrigin(util.getSprite().id, x, y)
+}
+
+/** スクロールファクターを設定 (Phaser setScrollFactor 相当) */
+export function looks_setscrollfactor(args: BlockArgs, util: BlockUtil) {
+  const x = Number(args.X ?? 1)
+  const y = Number(args.Y ?? 1)
+  const scene = util.getScene()
+  if (scene) scene.setSpriteScrollFactor(util.getSprite().id, x, y)
+}

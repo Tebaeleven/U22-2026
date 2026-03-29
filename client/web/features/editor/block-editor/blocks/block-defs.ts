@@ -11,6 +11,7 @@ import { buildProcedureBlockDefs, normalizeProcedure } from "./procedure-helpers
 function createBuiltinBlockDefs() {
   const V = ["my variable", "score", "timer"]
   const L = ["my list", "inventory", "path"]
+  const D = ["my dict", "inventory", "settings"]
   const K = ["space", "up arrow", "down arrow", "right arrow", "left arrow", "any"]
   const EVT = ["message1", "game-over", "reset", "coin-hit", "collision"]
 
@@ -270,6 +271,14 @@ function createBuiltinBlockDefs() {
     { category: "physics", name: "Accelerate to", opcode: "physics_accelerateto", shape: "stack", color: "#FF4D6A", inputs: [{ type: "dropdown", default: "プレイヤー", options: ["プレイヤー"] }, { type: "label", text: "at" }, { type: "number", default: 100 }] },
     { category: "physics", name: "Velocity from angle", opcode: "physics_velocityfromangle", shape: "stack", color: "#FF4D6A", inputs: [{ type: "number", default: 0 }, { type: "label", text: "speed:" }, { type: "number", default: 200 }] },
 
+    // --- Phase 4: Phaser API 拡張 ---
+    { category: "physics", name: "Set body size", opcode: "physics_setbodysize", shape: "stack", color: "#FF4D6A", inputs: [{ type: "label", text: "w:" }, { type: "number", default: 32 }, { type: "label", text: "h:" }, { type: "number", default: 32 }] },
+    { category: "physics", name: "Set body offset", opcode: "physics_setbodyoffset", shape: "stack", color: "#FF4D6A", inputs: [{ type: "label", text: "x:" }, { type: "number", default: 0 }, { type: "label", text: "y:" }, { type: "number", default: 0 }] },
+    { category: "physics", name: "Set circle radius:", opcode: "physics_setcircle", shape: "stack", color: "#FF4D6A", inputs: [{ type: "number", default: 16 }] },
+    { category: "looks", name: "Set origin", opcode: "looks_setorigin", shape: "stack", color: "#9966FF", inputs: [{ type: "label", text: "x:" }, { type: "number", default: 0.5 }, { type: "label", text: "y:" }, { type: "number", default: 0.5 }] },
+    { category: "looks", name: "Set scroll factor", opcode: "looks_setscrollfactor", shape: "stack", color: "#9966FF", inputs: [{ type: "label", text: "x:" }, { type: "number", default: 1 }, { type: "label", text: "y:" }, { type: "number", default: 1 }] },
+    { category: "looks", name: "Set background", opcode: "scene_setbackground", shape: "stack", color: "#9966FF", inputs: [{ type: "text", default: "#000000" }] },
+
     // --- Phase 3: 入力拡張 ---
     { category: "sensing", name: "Mouse down?", opcode: "sensing_mousedown", shape: "boolean", color: "#5CB1D6", inputs: [] },
     { category: "sensing", name: "Mouse wheel", opcode: "sensing_mousewheel", shape: "reporter", color: "#5CB1D6", inputs: [] },
@@ -287,6 +296,111 @@ function createBuiltinBlockDefs() {
     { category: "sound", name: "Play sound loop", opcode: "sound_playloop", shape: "stack", color: "#D65CD6", inputs: [{ type: "dropdown", default: "beep", options: ["beep", "coin", "jump", "hit", "laser", "powerup", "explosion"] }] },
     { category: "sound", name: "Stop sound", opcode: "sound_stop", shape: "stack", color: "#D65CD6", inputs: [{ type: "dropdown", default: "beep", options: ["beep", "coin", "jump", "hit", "laser", "powerup", "explosion"] }] },
     { category: "sound", name: "Set volume", opcode: "sound_setvolume", shape: "stack", color: "#D65CD6", inputs: [{ type: "dropdown", default: "beep", options: ["beep", "coin", "jump", "hit", "laser", "powerup", "explosion"] }, { type: "label", text: "to" }, { type: "number", default: 50 }, { type: "label", text: "%" }] },
+
+    // ─── モダン言語拡張: 比較演算子 ───
+    { category: "operators", name: "", opcode: "operator_gte", shape: "boolean", color: "#59C059", inputs: [{ type: "number", default: 0 }, { type: "label", text: "≥" }, { type: "number", default: 0 }] },
+    { category: "operators", name: "", opcode: "operator_lte", shape: "boolean", color: "#59C059", inputs: [{ type: "number", default: 0 }, { type: "label", text: "≤" }, { type: "number", default: 0 }] },
+    { category: "operators", name: "", opcode: "operator_neq", shape: "boolean", color: "#59C059", inputs: [{ type: "number", default: 0 }, { type: "label", text: "≠" }, { type: "number", default: 0 }] },
+
+    // ─── モダン言語拡張: 文字列操作 ───
+    { category: "operators", name: "Letter", opcode: "operator_letter_of", shape: "reporter", color: "#59C059", inputs: [{ type: "number", default: 1 }, { type: "label", text: "of" }, { type: "text", default: "hello" }] },
+    { category: "operators", name: "Contains", opcode: "operator_contains", shape: "boolean", color: "#59C059", inputs: [{ type: "text", default: "hello" }, { type: "label", text: "contains" }, { type: "text", default: "ell" }] },
+    { category: "operators", name: "Substring", opcode: "operator_substring", shape: "reporter", color: "#59C059", inputs: [{ type: "text", default: "hello" }, { type: "label", text: "from" }, { type: "number", default: 1 }, { type: "label", text: "len" }, { type: "number", default: 3 }] },
+    { category: "operators", name: "Split", opcode: "operator_split", shape: "reporter", color: "#59C059", inputs: [{ type: "text", default: "a,b,c" }, { type: "label", text: "by" }, { type: "text", default: "," }] },
+    { category: "operators", name: "Replace", opcode: "operator_replace", shape: "reporter", color: "#59C059", inputs: [{ type: "text", default: "hello" }, { type: "label", text: "replace" }, { type: "text", default: "l" }, { type: "label", text: "with" }, { type: "text", default: "r" }] },
+
+    // ─── モダン言語拡張: 型変換 ───
+    { category: "operators", name: "To number", opcode: "operator_tonum", shape: "reporter", color: "#59C059", inputs: [{ type: "text", default: "42" }] },
+    { category: "operators", name: "To text", opcode: "operator_tostr", shape: "reporter", color: "#59C059", inputs: [{ type: "number", default: 42 }] },
+
+    // ─── モダン言語拡張: 数学関数 ───
+    { category: "operators", name: "Lerp", opcode: "math_lerp", shape: "reporter", color: "#59C059", inputs: [{ type: "number", default: 0 }, { type: "label", text: "→" }, { type: "number", default: 100 }, { type: "label", text: "%" }, { type: "number", default: 50 }] },
+    { category: "operators", name: "Clamp", opcode: "math_clamp", shape: "reporter", color: "#59C059", inputs: [{ type: "number", default: 50 }, { type: "label", text: "min" }, { type: "number", default: 0 }, { type: "label", text: "max" }, { type: "number", default: 100 }] },
+    { category: "operators", name: "Floor", opcode: "math_floor", shape: "reporter", color: "#59C059", inputs: [{ type: "number", default: 0 }] },
+    { category: "operators", name: "Ceil", opcode: "math_ceil", shape: "reporter", color: "#59C059", inputs: [{ type: "number", default: 0 }] },
+    { category: "operators", name: "Sqrt", opcode: "math_sqrt", shape: "reporter", color: "#59C059", inputs: [{ type: "number", default: 0 }] },
+    { category: "operators", name: "Pow", opcode: "math_pow", shape: "reporter", color: "#59C059", inputs: [{ type: "number", default: 2 }, { type: "label", text: "^" }, { type: "number", default: 3 }] },
+    { category: "operators", name: "Atan2", opcode: "math_atan2", shape: "reporter", color: "#59C059", inputs: [{ type: "label", text: "y:" }, { type: "number", default: 0 }, { type: "label", text: "x:" }, { type: "number", default: 0 }] },
+    { category: "operators", name: "Tan", opcode: "math_tan", shape: "reporter", color: "#59C059", inputs: [{ type: "number", default: 0 }] },
+    { category: "operators", name: "Sign", opcode: "math_sign", shape: "reporter", color: "#59C059", inputs: [{ type: "number", default: 0 }] },
+    { category: "operators", name: "Remap", opcode: "math_remap", shape: "reporter", color: "#59C059", inputs: [{ type: "number", default: 50 }, { type: "label", text: "from" }, { type: "number", default: 0 }, { type: "number", default: 100 }, { type: "label", text: "to" }, { type: "number", default: 0 }, { type: "number", default: 1 }] },
+    { category: "operators", name: "π", opcode: "math_pi", shape: "reporter", color: "#59C059", inputs: [] },
+
+    // ─── モダン言語拡張: 制御構文 ───
+    { category: "control", name: "Break", opcode: "control_break", shape: "stack", color: "#FFAB19", inputs: [] },
+    { category: "control", name: "Continue", opcode: "control_continue", shape: "stack", color: "#FFAB19", inputs: [] },
+    {
+      category: "control",
+      name: "For each",
+      opcode: "control_for_each",
+      shape: "c-block",
+      color: "#FFAB19",
+      inputs: [
+        {
+          type: "variable-name",
+          default: "item",
+          editable: false,
+          appearance: "inline-reporter",
+          copySource: {
+            targetOpcode: "control_foreach_variable",
+            targetShape: "reporter",
+            inputBindings: { 0: 0 },
+          },
+          minWidth: INLINE_REPORTER_INPUT_MIN_W,
+          maxWidth: INLINE_REPORTER_INPUT_MAX_W,
+        },
+        { type: "label", text: "in" },
+        { type: "dropdown", default: "my list", options: L },
+      ],
+    },
+    {
+      category: "control",
+      name: "",
+      opcode: "control_foreach_variable",
+      shape: "reporter",
+      color: "#FFAB19",
+      paletteHidden: true,
+      inputs: [{ type: "variable-name", default: "item", editable: false, minWidth: 28, maxWidth: 96 }],
+    },
+    { category: "control", name: "Spawn", opcode: "control_spawn", shape: "c-block", color: "#FFAB19", inputs: [] },
+
+    // ─── モダン言語拡張: 辞書 ───
+    { category: "lists", name: "Dict set", opcode: "data_dictset", shape: "stack", color: "#FF661A", inputs: [{ type: "dropdown", default: "my dict", options: D }, { type: "label", text: "key" }, { type: "text", default: "key" }, { type: "label", text: "to" }, { type: "text", default: "value" }] },
+    { category: "lists", name: "Dict get", opcode: "data_dictget", shape: "reporter", color: "#FF661A", inputs: [{ type: "dropdown", default: "my dict", options: D }, { type: "label", text: "key" }, { type: "text", default: "key" }] },
+    { category: "lists", name: "Dict delete", opcode: "data_dictdelete", shape: "stack", color: "#FF661A", inputs: [{ type: "dropdown", default: "my dict", options: D }, { type: "label", text: "key" }, { type: "text", default: "key" }] },
+    { category: "lists", name: "Dict has key", opcode: "data_dicthas", shape: "boolean", color: "#FF661A", inputs: [{ type: "dropdown", default: "my dict", options: D }, { type: "label", text: "has" }, { type: "text", default: "key" }] },
+    { category: "lists", name: "Dict keys", opcode: "data_dictkeys", shape: "reporter", color: "#FF661A", inputs: [{ type: "dropdown", default: "my dict", options: D }] },
+    { category: "lists", name: "Dict length", opcode: "data_dictlength", shape: "reporter", color: "#FF661A", inputs: [{ type: "dropdown", default: "my dict", options: D }] },
+
+    // ─── モダン言語拡張: 状態マシン ───
+    { category: "control", name: "Set state to", opcode: "state_set", shape: "stack", color: "#FFAB19", inputs: [{ type: "text", default: "idle" }] },
+    { category: "control", name: "State", opcode: "state_get", shape: "reporter", color: "#FFAB19", inputs: [] },
+    { category: "control", name: "When state is", opcode: "state_when", shape: "hat", color: "#FFAB19", inputs: [{ type: "text", default: "idle" }] },
+    { category: "control", name: "State is", opcode: "state_is", shape: "boolean", color: "#FFAB19", inputs: [{ type: "text", default: "idle" }] },
+
+    // ─── モダン言語拡張: シーン管理 ───
+    { category: "camera", name: "Switch scene to", opcode: "scene_switch", shape: "stack", color: "#3D9970", inputs: [{ type: "text", default: "game" }] },
+    { category: "camera", name: "Current scene", opcode: "scene_current", shape: "reporter", color: "#3D9970", inputs: [] },
+    { category: "camera", name: "Set time scale to", opcode: "scene_timescale", shape: "stack", color: "#3D9970", inputs: [{ type: "number", default: 1 }] },
+    { category: "camera", name: "Save", opcode: "scene_save", shape: "stack", color: "#3D9970", inputs: [{ type: "text", default: "highscore" }, { type: "label", text: "value" }, { type: "text", default: "0" }] },
+    { category: "camera", name: "Load", opcode: "scene_load", shape: "reporter", color: "#3D9970", inputs: [{ type: "text", default: "highscore" }] },
+
+    // ─── モダン言語拡張: スプライト操作 ───
+    { category: "sensing", name: "Property of", opcode: "sprite_getprop", shape: "reporter", color: "#5CB1D6", inputs: [{ type: "dropdown", default: "プレイヤー", options: ["プレイヤー"] }, { type: "label", text: "." }, { type: "dropdown", default: "x", options: ["x", "y", "direction", "size", "state", "costume #", "layer"] }] },
+    { category: "sensing", name: "Set layer to", opcode: "sprite_setlayer", shape: "stack", color: "#5CB1D6", inputs: [{ type: "number", default: 0 }] },
+    { category: "sensing", name: "Layer", opcode: "sprite_getlayer", shape: "reporter", color: "#5CB1D6", inputs: [] },
+    { category: "sensing", name: "Add tag", opcode: "sprite_addtag", shape: "stack", color: "#5CB1D6", inputs: [{ type: "text", default: "enemy" }] },
+    { category: "sensing", name: "Remove tag", opcode: "sprite_removetag", shape: "stack", color: "#5CB1D6", inputs: [{ type: "text", default: "enemy" }] },
+    { category: "sensing", name: "Has tag", opcode: "sprite_hastag", shape: "boolean", color: "#5CB1D6", inputs: [{ type: "text", default: "enemy" }] },
+    { category: "sensing", name: "For each with tag", opcode: "sprite_withtagdo", shape: "c-block", color: "#5CB1D6", inputs: [{ type: "text", default: "enemy" }] },
+    { category: "sensing", name: "Tag loop target", opcode: "sprite_taglooptarget", shape: "reporter", color: "#5CB1D6", inputs: [] },
+
+    // ─── モダン言語拡張: イージング（既存 Tween 拡張） ───
+    // 既存の Tween ブロックと同じ color/category だが、イージング選択付き
+    { category: "motion", name: "Tween to (ease)", opcode: "motion_tweento_ease", shape: "stack", color: "#4C97FF", inputs: [{ type: "label", text: "x:" }, { type: "number", default: 0 }, { type: "label", text: "y:" }, { type: "number", default: 0 }, { type: "label", text: "in" }, { type: "number", default: 1 }, { type: "label", text: "secs" }, { type: "dropdown", default: "linear", options: ["linear", "ease-in", "ease-out", "ease-in-out", "bounce"] }] },
+    { category: "looks", name: "Tween scale (ease)", opcode: "tween_scale_ease", shape: "stack", color: "#9966FF", inputs: [{ type: "number", default: 2 }, { type: "label", text: "in" }, { type: "number", default: 1 }, { type: "label", text: "secs" }, { type: "dropdown", default: "linear", options: ["linear", "ease-in", "ease-out", "ease-in-out", "bounce"] }] },
+    { category: "looks", name: "Tween alpha (ease)", opcode: "tween_alpha_ease", shape: "stack", color: "#9966FF", inputs: [{ type: "number", default: 0.5 }, { type: "label", text: "in" }, { type: "number", default: 1 }, { type: "label", text: "secs" }, { type: "dropdown", default: "linear", options: ["linear", "ease-in", "ease-out", "ease-in-out", "bounce"] }] },
+    { category: "looks", name: "Tween angle (ease)", opcode: "tween_angle_ease", shape: "stack", color: "#9966FF", inputs: [{ type: "number", default: 360 }, { type: "label", text: "in" }, { type: "number", default: 1 }, { type: "label", text: "secs" }, { type: "dropdown", default: "linear", options: ["linear", "ease-in", "ease-out", "ease-in-out", "bounce"] }] },
   ]
 
   return defs.map((def, index) => {
@@ -321,6 +435,7 @@ export const SPRITE_DROPDOWN_OPCODES: Record<string, { prefixOptions: string[]; 
   event_whentouched: { prefixOptions: ["any"], inputIndex: 0 },
   physics_moveto: { prefixOptions: [], inputIndex: 0 },
   physics_accelerateto: { prefixOptions: [], inputIndex: 0 },
+  sprite_getprop: { prefixOptions: [], inputIndex: 0 },
 }
 
 function injectSpriteNames(defs: BlockDef[], spriteNames: string[]): BlockDef[] {

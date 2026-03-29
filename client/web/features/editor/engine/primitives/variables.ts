@@ -67,3 +67,77 @@ export function data_lengthoflist(args: BlockArgs, util: BlockUtil): number {
   const list = getList(util, String(args.LIST))
   return list.length
 }
+
+/** リストに挿入 */
+export function data_insertatlist(args: BlockArgs, util: BlockUtil) {
+  const list = getList(util, String(args.LIST))
+  const index = Number(args.INDEX) - 1
+  if (index >= 0 && index <= list.length) {
+    list.splice(index, 0, args.ITEM ?? "")
+    util.setVariable(String(args.LIST), [...list])
+  }
+}
+
+/** リストの要素を置換 */
+export function data_replaceitemoflist(args: BlockArgs, util: BlockUtil) {
+  const list = getList(util, String(args.LIST))
+  const index = Number(args.INDEX) - 1
+  if (index >= 0 && index < list.length) {
+    list[index] = args.VALUE ?? ""
+    util.setVariable(String(args.LIST), [...list])
+  }
+}
+
+/** リストに含まれるか */
+export function data_listcontainsitem(args: BlockArgs, util: BlockUtil): boolean {
+  const list = getList(util, String(args.LIST))
+  return list.includes(args.ITEM ?? "")
+}
+
+// ─── 辞書操作 ────────────────────────────────────
+
+function getDict(util: BlockUtil, name: string): Record<string, unknown> {
+  const dict = util.getVariable(name)
+  if (dict && typeof dict === "object" && !Array.isArray(dict)) return dict as Record<string, unknown>
+  const newDict: Record<string, unknown> = {}
+  util.setVariable(name, newDict)
+  return newDict
+}
+
+/** 辞書にキーを設定 */
+export function data_dictset(args: BlockArgs, util: BlockUtil) {
+  const dict = getDict(util, String(args.DICT))
+  dict[String(args.KEY ?? "")] = args.VALUE ?? ""
+  util.setVariable(String(args.DICT), { ...dict })
+}
+
+/** 辞書の値を取得 */
+export function data_dictget(args: BlockArgs, util: BlockUtil): unknown {
+  const dict = getDict(util, String(args.DICT))
+  return dict[String(args.KEY ?? "")] ?? ""
+}
+
+/** 辞書のキーを削除 */
+export function data_dictdelete(args: BlockArgs, util: BlockUtil) {
+  const dict = getDict(util, String(args.DICT))
+  delete dict[String(args.KEY ?? "")]
+  util.setVariable(String(args.DICT), { ...dict })
+}
+
+/** 辞書にキーが存在するか */
+export function data_dicthas(args: BlockArgs, util: BlockUtil): boolean {
+  const dict = getDict(util, String(args.DICT))
+  return String(args.KEY ?? "") in dict
+}
+
+/** 辞書のキー一覧 */
+export function data_dictkeys(args: BlockArgs, util: BlockUtil): string[] {
+  const dict = getDict(util, String(args.DICT))
+  return Object.keys(dict)
+}
+
+/** 辞書の長さ */
+export function data_dictlength(args: BlockArgs, util: BlockUtil): number {
+  const dict = getDict(util, String(args.DICT))
+  return Object.keys(dict).length
+}

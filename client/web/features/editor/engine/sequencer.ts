@@ -33,6 +33,10 @@ export interface SequencerCallbacks {
   addInterval: (spriteId: string, eventName: string, ms: number) => void
   removeInterval: (spriteId: string, eventName: string) => void
   addTimeout: (spriteId: string, eventName: string, ms: number) => void
+  spawnThread: (spriteId: string, script: ScriptBlock) => void
+  switchScene: (name: string) => void
+  getCurrentScene: () => string
+  setTimeScale: (scale: number) => void
 }
 
 /**
@@ -141,6 +145,25 @@ export class Sequencer {
           this.callbacks.removeInterval(thread.spriteId, eventName),
         addTimeout: (eventName: string, ms: number) =>
           this.callbacks.addTimeout(thread.spriteId, eventName, ms),
+        breakLoop: () => {
+          thread.breakCurrentLoop()
+        },
+        continueLoop: () => {
+          thread.continueCurrentLoop()
+        },
+        spawnThread: () => {
+          const block = thread.currentBlock
+          if (block && block.branches[0]) {
+            this.callbacks.spawnThread(thread.spriteId, block.branches[0])
+          }
+        },
+        switchScene: (name: string) => {
+          this.callbacks.switchScene(name)
+        },
+        getCurrentScene: () => this.callbacks.getCurrentScene(),
+        setTimeScale: (scale: number) => {
+          this.callbacks.setTimeScale(scale)
+        },
       }
 
       const resolvedArgs = this.resolveInputBlocks(block, block.args, thread, util)

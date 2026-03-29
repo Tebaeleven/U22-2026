@@ -5,6 +5,7 @@ import type {
   CompiledProgram,
   GameSceneProxy,
   PhysicsMode,
+  ScriptBlock,
   SpriteRuntime,
 } from "./types"
 import type { SpriteDef } from "../constants"
@@ -58,6 +59,9 @@ export class Runtime {
   private totalPausedDuration = 0
   // --- リスタート要求 ---
   private restartRequested = false
+  // --- シーン管理 ---
+  private currentScene = "default"
+  private timeScale = 1
   // --- パフォーマンス最適化用キャッシュ ---
   private spriteArrayCache: SpriteRuntime[] | null = null
   private spriteNameIndex: Map<string, SpriteRuntime[]> = new Map()
@@ -106,6 +110,10 @@ export class Runtime {
       addInterval: (spriteId, eventName, ms) => this.addInterval(spriteId, eventName, ms),
       removeInterval: (spriteId, eventName) => this.removeInterval(spriteId, eventName),
       addTimeout: (spriteId, eventName, ms) => this.addTimeout(spriteId, eventName, ms),
+      spawnThread: (spriteId, script) => this.spawnNewThread(spriteId, script),
+      switchScene: (name) => { this.currentScene = name },
+      getCurrentScene: () => this.currentScene,
+      setTimeScale: (scale) => { this.timeScale = scale },
     })
   }
 
@@ -176,6 +184,9 @@ export class Runtime {
         pushable: true,
         mouseDown: false,
         mouseWheelDelta: 0,
+        currentState: "default",
+        layer: 0,
+        tags: new Set<string>(),
         _velocityDirty: false,
       })
     }
@@ -800,6 +811,12 @@ export class Runtime {
   }
 
   /** リスタート要求 */
+  /** body を新しいスレッドとして生成（spawn） */
+  spawnNewThread(spriteId: string, script: ScriptBlock) {
+    const newThread = new Thread(script, spriteId, null)
+    this.threads.push(newThread)
+  }
+
   requestRestart() {
     this.restartRequested = true
   }

@@ -82,6 +82,14 @@ function collectFromStatement(stmt: StatementNode, vars: Set<string>): void {
     case "for":
       collectVariables(stmt.body, vars)
       break
+    case "forEach":
+      collectVariables(stmt.body, vars)
+      break
+    case "spawn":
+      collectVariables(stmt.body, vars)
+      break
+    case "break":
+    case "continue":
     case "call":
     case "return":
       break

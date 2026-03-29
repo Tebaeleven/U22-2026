@@ -23,10 +23,11 @@ type Token = {
 const KEYWORDS = new Set([
   "class", "this",
   "if", "else", "while", "repeat", "for", "in", "return",
+  "break", "continue", "spawn", "forEach",
   "true", "false",
 ])
 
-const TWO_CHAR_OPS = new Set(["==", "&&", "||", "+=", ".."])
+const TWO_CHAR_OPS = new Set(["==", "!=", ">=", "<=", "&&", "||", "+=", ".."])
 const SINGLE_CHAR_OPS = new Set(["+", "-", "*", "/", "%", ">", "<", "!", "="])
 const PUNCTUATION = new Set(["(", ")", "{", "}", ",", "."])
 
@@ -157,8 +158,11 @@ const PRECEDENCE: Record<string, number> = {
   "||": 1,
   "&&": 2,
   "==": 3,
+  "!=": 3,
   ">": 4,
   "<": 4,
+  ">=": 4,
+  "<=": 4,
   "+": 5,
   "-": 5,
   "*": 6,
@@ -313,6 +317,10 @@ class ClassParser {
         case "while": return this.parseWhile()
         case "repeat": return this.parseRepeat()
         case "for": return this.parseFor()
+        case "forEach": return this.parseForEach()
+        case "spawn": return this.parseSpawn()
+        case "break": { this.advance(); return { type: "break" } }
+        case "continue": { this.advance(); return { type: "continue" } }
         case "return": return this.parseReturn()
         case "this": return this.parseThisStatement()
       }
@@ -478,6 +486,27 @@ class ClassParser {
     const body = this.parseStatements()
     this.expect("punctuation", "}")
     return { type: "for", variable, from, to, body }
+  }
+
+  private parseForEach(): StatementNode {
+    this.expect("keyword", "forEach")
+    this.expect("punctuation", "(")
+    const variable = this.expect("identifier").value
+    this.expect("keyword", "in")
+    const list = this.expect("identifier").value
+    this.expect("punctuation", ")")
+    this.expect("punctuation", "{")
+    const body = this.parseStatements()
+    this.expect("punctuation", "}")
+    return { type: "forEach", variable, list, body }
+  }
+
+  private parseSpawn(): StatementNode {
+    this.expect("keyword", "spawn")
+    this.expect("punctuation", "{")
+    const body = this.parseStatements()
+    this.expect("punctuation", "}")
+    return { type: "spawn", body }
   }
 
   private parseReturn(): StatementNode {

@@ -131,3 +131,56 @@ export function control_stop(_args: BlockArgs, _util: BlockUtil) {
 export function control_restart(_args: BlockArgs, util: BlockUtil) {
   util.restartGame()
 }
+
+/** ループを抜ける */
+export function control_break(_args: BlockArgs, util: BlockUtil) {
+  util.breakLoop()
+}
+
+/** 次の繰り返しへスキップ */
+export function control_continue(_args: BlockArgs, util: BlockUtil) {
+  util.continueLoop()
+}
+
+type ForEachState = {
+  name: string
+  list: unknown[]
+  index: number
+  activeValue: unknown
+}
+
+/** リストの各要素について繰り返す */
+export function control_for_each(args: BlockArgs, util: BlockUtil) {
+  const frame = util.stackFrame as typeof util.stackFrame & {
+    forEachState?: ForEachState
+  }
+
+  if (frame.forEachState === undefined) {
+    const listName = String(args.LIST ?? "")
+    const rawList = util.getVariable(listName)
+    const list = Array.isArray(rawList) ? rawList : []
+    frame.forEachState = {
+      name: String(args.NAME ?? "item"),
+      list,
+      index: 0,
+      activeValue: list[0],
+    }
+  }
+
+  const state = frame.forEachState
+  if (state.index >= state.list.length) return
+
+  state.activeValue = state.list[state.index]
+  state.index += 1
+  util.startBranch(0, true)
+}
+
+/** for-each のループ変数 */
+export function control_foreach_variable(args: BlockArgs, util: BlockUtil): unknown {
+  return util.getLoopVariable(String(args.NAME ?? ""))
+}
+
+/** body を新スレッドとして並行実行 */
+export function control_spawn(_args: BlockArgs, util: BlockUtil) {
+  util.spawnThread()
+}

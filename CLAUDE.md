@@ -73,6 +73,50 @@ server/supabase/     → Supabase（マイグレーション・設定）
 libs/headless-vpl/   → VPL ライブラリ（Git サブモジュール、Bun + Vite）
 ```
 
+### エディタのフォルダ構造
+
+```
+client/web/features/editor/
+├── block-editor/              ← ブロックエディタ本体（コントローラー、接続、レイアウト、永続化）
+│   └── blocks/                ← ブロック定義（block-defs.ts: 396定義）、形状・振る舞い・定数
+├── engine/                    ← VM / ランタイムエンジン
+│   ├── runtime.ts             ← メインゲームループ、スプライト状態、スレッド管理
+│   ├── sequencer.ts           ← スレッド実行スケジューラ（ラウンドロビン）
+│   ├── thread.ts              ← 実行スレッド（ブロックスタック、フレームスタック）
+│   ├── script-builder.ts      ← ブロックデータ → 実行可能 ScriptBlock ツリー変換
+│   ├── program-builder.ts     ← 全スプライト一括コンパイル
+│   ├── block-registry.ts      ← オペコード → ブロック関数ディスパッチ
+│   ├── types.ts               ← BlockUtil, GameSceneProxy, SpriteRuntime 等の型定義
+│   └── primitives/            ← 21カテゴリのプリミティブ関数
+│       ├── motion.ts, looks.ts, sound.ts, events.ts
+│       ├── control.ts, sensing.ts, operators.ts, variables.ts
+│       ├── observer.ts, physics.ts, clone.ts, camera.ts
+│       ├── tween.ts, math.ts, timer.ts, text.ts
+│       ├── particle.ts, anim.ts, state-machine.ts
+│       ├── scene-util.ts, sprite-util.ts
+│       └── index.ts           ← 全プリミティブの再エクスポート
+├── codegen/                   ← コード生成パイプライン
+│   ├── class-parser.ts        ← クラスベース疑似コード → ClassProgramAST
+│   ├── ast-types.ts           ← AST 型定義（ProgramAST, StatementNode, ExprNode 等）
+│   ├── ast-converter.ts       ← ClassProgramAST → ProgramAST 正規化変換
+│   └── block-generator.ts     ← AST → SerializedBlockNode[] 変換
+├── renderer/                  ← Phaser ベースのゲームレンダラー
+│   ├── phaser-stage.tsx       ← Phaser インスタンスの React ラッパー
+│   └── game-scene.ts          ← ゲームシーン実装（物理・スプライト・トゥイーン）
+├── components/                ← React UI コンポーネント（23ファイル）
+│   ├── block-workspace.tsx    ← ブロックキャンバス
+│   ├── block-palette.tsx      ← ブロックパレット
+│   ├── stage-panel.tsx        ← ゲームプレビュー
+│   ├── sprite-list.tsx        ← スプライト一覧
+│   └── ...                    ← デバッグ、アセット、コスチューム、サウンド等
+├── samples/                   ← サンプルプロジェクト（11カテゴリ）
+│   ├── physics/, camera/, tweens/, particles/, timer/
+│   ├── input/, animation/, math/, control/, sound/
+│   └── games/                 ← 完成ゲーム例（Breakout, Snake, Pong 等）
+├── hooks/                     ← React hooks
+└── utils/                     ← ユーティリティ（画像境界検出等）
+```
+
 ### 通信フロー
 
 クライアント（Colyseus SDK）→ WebSocket → Colyseus サーバー → Schema ベースの状態自動同期
@@ -93,6 +137,12 @@ libs/headless-vpl/   → VPL ライブラリ（Git サブモジュール、Bun +
 
 ブロックエディタの用語定義は @docs/ubiquitous-language.md を参照。
 ユーザーが「レポーターブロック」「ディファインブロック」「引数ブロック」等の用語を使った場合、このドキュメントに基づいて解釈すること。
+
+## ガイド（トラブルシュート・ベストプラクティス）
+
+@docs/guide/ にコネクタ接続周りの過去の問題点と解決策がまとめられている。ブロックの接続・近接判定・ネスティングに関する修正を行う前に必ず目を通すこと。
+
+- @docs/guide/block-editor-connector-proximity.md — スロット近接ハイライト、コネクタ `hitRadius` と当たり判定の整合、Forever body への C ブロックネスト問題と `skipNearLayoutCheck` による対処
 
 ## 重要な注意事項
 

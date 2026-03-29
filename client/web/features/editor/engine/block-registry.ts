@@ -17,6 +17,9 @@ import * as textPrimitives from "./primitives/text"
 import * as particlePrimitives from "./primitives/particle"
 import { anim_create, anim_play, anim_stop, anim_oncomplete } from "./primitives/anim"
 import * as soundPrimitives from "./primitives/sound"
+import * as stateMachinePrimitives from "./primitives/state-machine"
+import * as sceneUtilPrimitives from "./primitives/scene-util"
+import * as spriteUtilPrimitives from "./primitives/sprite-util"
 
 const registry = new Map<string, BlockFunction>()
 
@@ -44,6 +47,9 @@ registerAll(textPrimitives)
 registerAll(particlePrimitives)
 registerAll({ anim_create, anim_play, anim_stop, anim_oncomplete })
 registerAll(soundPrimitives)
+registerAll(stateMachinePrimitives)
+registerAll(sceneUtilPrimitives)
+registerAll(spriteUtilPrimitives)
 
 export function getBlockFunction(opcode: string): BlockFunction | undefined {
   return registry.get(opcode)

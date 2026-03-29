@@ -103,12 +103,9 @@ class ボール {
 class ブリック {
   onCreate() {
     this.hide()
-    this.spawnCol = 0
-    this.spawnRow = 0
-    for (row in 0..3) {
-      for (col in 0..5) {
-        this.spawnCol = col
-        this.spawnRow = row
+    for (row in 0 .. 3) {
+      for (col in 0 .. 5) {
+        this.setPosition(-400 + col * 160, 350 - row * 60)
         this.createClone("myself")
       }
     }
@@ -117,7 +114,6 @@ class ブリック {
   onClone() {
     this.show()
     this.setPhysics("static")
-    this.setPosition(-400 + this.spawnCol * 160, 350 - this.spawnRow * 60)
     this.tweenScale(1.2, 0.2)
   }
 

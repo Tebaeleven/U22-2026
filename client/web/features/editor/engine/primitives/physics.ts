@@ -263,3 +263,28 @@ export function physics_velocityfromangle(args: BlockArgs, util: BlockUtil) {
   const scene = util.getScene()
   if (scene) scene.velocityFromAngle(util.getSprite().id, angle, speed)
 }
+
+// ── Phase 4: Phaser API 拡張 ──────────────────────────────
+
+/** 物理ボディのサイズを変更 (Phaser body.setSize 相当) */
+export function physics_setbodysize(args: BlockArgs, util: BlockUtil) {
+  const width = Number(args.WIDTH ?? 32)
+  const height = Number(args.HEIGHT ?? 32)
+  const scene = util.getScene()
+  if (scene) scene.setSpriteBodySize(util.getSprite().id, width, height)
+}
+
+/** 物理ボディのオフセットを設定 (Phaser body.setOffset 相当) */
+export function physics_setbodyoffset(args: BlockArgs, util: BlockUtil) {
+  const ox = Number(args.OX ?? 0)
+  const oy = Number(args.OY ?? 0)
+  const scene = util.getScene()
+  if (scene) scene.setSpriteBodyOffset(util.getSprite().id, ox, oy)
+}
+
+/** 円形の物理ボディに変更 (Phaser body.setCircle 相当) */
+export function physics_setcircle(args: BlockArgs, util: BlockUtil) {
+  const radius = Number(args.RADIUS ?? 16)
+  const scene = util.getScene()
+  if (scene) scene.setSpriteCircle(util.getSprite().id, radius)
+}

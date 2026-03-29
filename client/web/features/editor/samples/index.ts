@@ -61,6 +61,16 @@ import { animEvents } from "./animation/anim-events"
 import { multiAnim } from "./animation/multi-anim"
 import { tweenCombo } from "./animation/tween-combo"
 
+// ── モダン言語拡張サンプル ──
+import { forEachDemo } from "./control/for-each-demo"
+import { stateMachineDemo } from "./control/state-machine-demo"
+import { spawnDemo } from "./control/spawn-demo"
+import { saveLoadDemo } from "./control/save-load-demo"
+import { tagGroupDemo } from "./control/tag-group-demo"
+import { lerpClampDemo } from "./math/lerp-clamp-demo"
+import { stringOpsDemo } from "./math/string-ops-demo"
+import { mathFunctionsDemo } from "./math/math-functions-demo"
+
 // ── 統合ゲーム（個別ファイル） ──
 import { beginnerGame } from "./games/beginner"
 import { breakoutGame } from "./games/breakout"
@@ -73,6 +83,12 @@ import { asteroidGame } from "./games/asteroid-game"
 import { topdownRpg } from "./games/topdown-rpg"
 import { firstGame } from "./games/first-game"
 import { flappyBird } from "./games/flappy-bird"
+import { emojiMatchGame } from "./games/emoji-match"
+import { mathChallengeGame } from "./games/math-challenge"
+import { sokobanGame } from "./games/sokoban"
+import { marsExplorerGame } from "./games/mars-explorer"
+import { waveShooterGame } from "./games/wave-shooter"
+import { wallBreakerGame } from "./games/wall-breaker"
 
 import type { SampleProject } from "./_helpers"
 
@@ -131,8 +147,14 @@ export const SAMPLE_CATEGORIES: SampleCategory[] = [
   {
     id: "math",
     name: "Math",
-    description: "角度・距離・三角関数",
-    samples: [chaseEnemy, orbitMotion, distanceSensor],
+    description: "角度・距離・三角関数・補間・文字列",
+    samples: [chaseEnemy, orbitMotion, distanceSensor, lerpClampDemo, mathFunctionsDemo, stringOpsDemo],
+  },
+  {
+    id: "control-advanced",
+    name: "Advanced Control",
+    description: "状態マシン・forEach・spawn・タグ・セーブ",
+    samples: [forEachDemo, stateMachineDemo, spawnDemo, tagGroupDemo, saveLoadDemo],
   },
   {
     id: "sound",
@@ -156,6 +178,12 @@ export const SAMPLE_CATEGORIES: SampleCategory[] = [
       topdownRpg,
       firstGame,
       flappyBird,
+      emojiMatchGame,
+      mathChallengeGame,
+      sokobanGame,
+      marsExplorerGame,
+      waveShooterGame,
+      wallBreakerGame,
     ],
   },
 ]

@@ -264,6 +264,65 @@ function getArgName(
     sound_playloop: ["SOUND"],
     sound_stop: ["SOUND"],
     sound_setvolume: ["SOUND", "VOL"],
+    // ── モダン言語拡張: 比較演算子 ──
+    operator_gte: ["OPERAND1", "OPERAND2"],
+    operator_lte: ["OPERAND1", "OPERAND2"],
+    operator_neq: ["OPERAND1", "OPERAND2"],
+    // ── モダン言語拡張: 文字列操作 ──
+    operator_letter_of: ["INDEX", "STRING"],
+    operator_contains: ["STRING1", "STRING2"],
+    operator_substring: ["STRING", "FROM", "LEN"],
+    operator_split: ["STRING", "SEP"],
+    operator_replace: ["STRING", "FROM", "TO"],
+    // ── モダン言語拡張: 型変換 ──
+    operator_tonum: ["VALUE"],
+    operator_tostr: ["VALUE"],
+    // ── モダン言語拡張: 数学 ──
+    math_lerp: ["A", "B", "T"],
+    math_clamp: ["VAL", "MIN", "MAX"],
+    math_floor: ["NUM"],
+    math_ceil: ["NUM"],
+    math_sqrt: ["NUM"],
+    math_pow: ["BASE", "EXP"],
+    math_atan2: ["Y", "X"],
+    math_tan: ["DEG"],
+    math_sign: ["NUM"],
+    math_remap: ["VAL", "FROM_MIN", "FROM_MAX", "TO_MIN", "TO_MAX"],
+    // ── モダン言語拡張: 制御構文 ──
+    control_for_each: ["NAME", "LIST"],
+    control_foreach_variable: ["NAME"],
+    // ── モダン言語拡張: 辞書 ──
+    data_dictset: ["DICT", "KEY", "VALUE"],
+    data_dictget: ["DICT", "KEY"],
+    data_dictdelete: ["DICT", "KEY"],
+    data_dicthas: ["DICT", "KEY"],
+    data_dictkeys: ["DICT"],
+    data_dictlength: ["DICT"],
+    // ── モダン言語拡張: リスト拡充 ──
+    data_insertatlist: ["ITEM", "INDEX", "LIST"],
+    data_replaceitemoflist: ["INDEX", "LIST", "VALUE"],
+    data_listcontainsitem: ["LIST", "ITEM"],
+    // ── モダン言語拡張: 状態マシン ──
+    state_set: ["STATE"],
+    state_when: ["STATE"],
+    state_is: ["STATE"],
+    // ── モダン言語拡張: シーン管理 ──
+    scene_switch: ["SCENE"],
+    scene_timescale: ["SCALE"],
+    scene_save: ["KEY", "VALUE"],
+    scene_load: ["KEY"],
+    // ── モダン言語拡張: スプライト操作 ──
+    sprite_getprop: ["SPRITE", "PROP"],
+    sprite_setlayer: ["LAYER"],
+    sprite_addtag: ["TAG"],
+    sprite_removetag: ["TAG"],
+    sprite_hastag: ["TAG"],
+    sprite_withtagdo: ["TAG"],
+    // ── モダン言語拡張: イージング付きTween ──
+    motion_tweento_ease: ["X", "Y", "SECS", "EASE"],
+    tween_scale_ease: ["SCALE", "SECS", "EASE"],
+    tween_alpha_ease: ["ALPHA", "SECS", "EASE"],
+    tween_angle_ease: ["ANGLE", "SECS", "EASE"],
   }
 
   const map = argMaps[opcode]

@@ -1118,6 +1118,42 @@ export class GameScene extends Phaser.Scene implements GameSceneProxy {
     return this.dragPositions.get(id) ?? null
   }
 
+  // ── Phase 4: Phaser API 拡張 ──
+
+  setSpriteBodySize(id: string, width: number, height: number) {
+    const img = this.spriteMap.get(id)
+    if (!img?.body) return
+    ;(img.body as Phaser.Physics.Arcade.Body).setSize(width, height)
+  }
+
+  setSpriteBodyOffset(id: string, ox: number, oy: number) {
+    const img = this.spriteMap.get(id)
+    if (!img?.body) return
+    ;(img.body as Phaser.Physics.Arcade.Body).setOffset(ox, oy)
+  }
+
+  setSpriteCircle(id: string, radius: number) {
+    const img = this.spriteMap.get(id)
+    if (!img?.body) return
+    ;(img.body as Phaser.Physics.Arcade.Body).setCircle(radius)
+  }
+
+  setSpriteOrigin(id: string, x: number, y: number) {
+    const img = this.spriteMap.get(id)
+    if (!img) return
+    img.setOrigin(x, y)
+  }
+
+  setSpriteScrollFactor(id: string, x: number, y: number) {
+    const img = this.spriteMap.get(id)
+    if (!img) return
+    img.setScrollFactor(x, y)
+  }
+
+  setBackgroundColor(color: string) {
+    this.cameras.main.setBackgroundColor(color)
+  }
+
   /** ホイールイベントの初期化（create() から呼ばれる） */
   private initWheelListener() {
     this.input.on("wheel", (_pointer: Phaser.Input.Pointer, _gameObjects: Phaser.GameObjects.GameObject[], _deltaX: number, deltaY: number) => {

@@ -151,6 +151,64 @@ const FUNC_TO_OPCODE: Record<string, string> = {
   cos: "math_cos",
   // procedures
   "return": "procedures_return",
+  // ── モダン言語拡張 ──
+  // 数学
+  lerp: "math_lerp",
+  clamp: "math_clamp",
+  floor: "math_floor",
+  ceil: "math_ceil",
+  sqrt: "math_sqrt",
+  pow: "math_pow",
+  atan2: "math_atan2",
+  tan: "math_tan",
+  sign: "math_sign",
+  remap: "math_remap",
+  // 文字列操作
+  letterOf: "operator_letter_of",
+  contains: "operator_contains",
+  substring: "operator_substring",
+  split: "operator_split",
+  replace: "operator_replace",
+  toNumber: "operator_tonum",
+  toText: "operator_tostr",
+  // 状態マシン
+  setState: "state_set",
+  // シーン管理
+  switchScene: "scene_switch",
+  setTimeScale: "scene_timescale",
+  save: "scene_save",
+  load: "scene_load",
+  // スプライト操作
+  propertyOf: "sprite_getprop",
+  setLayer: "sprite_setlayer",
+  addTag: "sprite_addtag",
+  removeTag: "sprite_removetag",
+  // スプライト操作（ブーリアン）
+  hasTag: "sprite_hastag",
+  stateIs: "state_is",
+  // 辞書操作
+  dictSet: "data_dictset",
+  dictGet: "data_dictget",
+  dictDelete: "data_dictdelete",
+  dictHas: "data_dicthas",
+  dictKeys: "data_dictkeys",
+  dictLength: "data_dictlength",
+  // リスト操作拡充
+  listInsert: "data_insertatlist",
+  listReplace: "data_replaceitemoflist",
+  listContains: "data_listcontainsitem",
+  // イージング付き Tween
+  tweenToEase: "motion_tweento_ease",
+  tweenScaleEase: "tween_scale_ease",
+  tweenAlphaEase: "tween_alpha_ease",
+  tweenAngleEase: "tween_angle_ease",
+  // Phase 4: Phaser API 拡張
+  setBodySize: "physics_setbodysize",
+  setBodyOffset: "physics_setbodyoffset",
+  setCircle: "physics_setcircle",
+  setOrigin: "looks_setorigin",
+  setScrollFactor: "looks_setscrollfactor",
+  setBackground: "scene_setbackground",
 }
 
 // ── レポーター名 → opcode マッピング（式中の変数/レポーター） ──
@@ -173,6 +231,12 @@ const REPORTER_MAP: Record<string, string> = {
   newValue: "observer_newvalue",
   oldValue: "observer_oldvalue",
   eventData: "observer_eventdata",
+  // ── モダン言語拡張 ──
+  state: "state_get",
+  currentScene: "scene_current",
+  layer: "sprite_getlayer",
+  pi: "math_pi",
+  tagLoopTarget: "sprite_taglooptarget",
 }
 
 // プロパティアクセス形式のレポーター（velocity.x 等）
@@ -192,7 +256,10 @@ const BINARY_OP_MAP: Record<string, string> = {
   "%": "operator_mod",
   ">": "operator_gt",
   "<": "operator_lt",
+  ">=": "operator_gte",
+  "<=": "operator_lte",
   "==": "operator_equals",
+  "!=": "operator_neq",
   "&&": "operator_and",
   "||": "operator_or",
 }
@@ -325,6 +392,10 @@ class BlockGenerator {
       case "while": return this.generateWhileUntil(stmt)
       case "repeat": return this.generateRepeat(stmt)
       case "for": return this.generateForRange(stmt)
+      case "forEach": return this.generateForEach(stmt)
+      case "spawn": return this.generateSpawn(stmt)
+      case "break": return this.generateSimpleBlock("control_break")
+      case "continue": return this.generateSimpleBlock("control_continue")
       case "return": return this.generateReturn(stmt)
     }
   }
@@ -478,6 +549,38 @@ class BlockGenerator {
 
     const bodyIds = this.generateStatementsAsList(stmt.body)
     return this.addBlock(defId, inputValues, { slotChildren, bodyChildren: [bodyIds] })
+  }
+
+  // ── forEach 文 ──
+
+  private generateForEach(stmt: { variable: string; list: string; body: StatementNode[] }): string {
+    const opcode = "control_for_each"
+    const defId = opcodeToDefId.get(opcode)!
+    const argIdxMap = buildArgIndexMap(opcode)
+
+    const inputValues: Record<string, string> = {
+      [String(argIdxMap[0])]: stmt.variable,
+      [String(argIdxMap[1])]: stmt.list,
+    }
+
+    const bodyIds = this.generateStatementsAsList(stmt.body)
+    return this.addBlock(defId, inputValues, { bodyChildren: [bodyIds] })
+  }
+
+  // ── spawn 文 ──
+
+  private generateSpawn(stmt: { body: StatementNode[] }): string {
+    const opcode = "control_spawn"
+    const defId = opcodeToDefId.get(opcode)!
+    const bodyIds = this.generateStatementsAsList(stmt.body)
+    return this.addBlock(defId, {}, { bodyChildren: [bodyIds] })
+  }
+
+  // ── 引数なしブロック ──
+
+  private generateSimpleBlock(opcode: string): string {
+    const defId = opcodeToDefId.get(opcode)!
+    return this.addBlock(defId, {})
   }
 
   // ── return 文 ──
