@@ -23,13 +23,15 @@ export type HatNode =
   | { type: "touched"; target: string }
   | { type: "event"; name: string }
   | { type: "varChange"; variable: string }
+  | { type: "liveWhen"; variable: string }
+  | { type: "liveUpon"; variable: string }
 
 // ── 文（スタックブロック） ──
 
 export type StatementNode =
   | { type: "call"; name: string; args: ExprNode[] }
   | { type: "assign"; variable: string; value: ExprNode }
-  | { type: "changeBy"; variable: string; value: ExprNode }
+  | { type: "changeBy"; variable: string; value: ExprNode; op?: string }
   | { type: "if"; condition: ExprNode; body: StatementNode[] }
   | { type: "ifElse"; condition: ExprNode; ifBody: StatementNode[]; elseBody: StatementNode[] }
   | { type: "while"; condition: ExprNode; body: StatementNode[] }
@@ -38,6 +40,9 @@ export type StatementNode =
   | { type: "for"; variable: string; from: ExprNode; to: ExprNode; body: StatementNode[] }
   | { type: "forEach"; variable: string; list: string; body: StatementNode[] }
   | { type: "spawn"; body: StatementNode[] }
+  | { type: "batch"; body: StatementNode[] }
+  | { type: "varDecl"; name: string; value: ExprNode }
+  | { type: "liveAssign"; variable: string; value: ExprNode }
   | { type: "break" }
   | { type: "continue" }
   | { type: "return"; value: ExprNode }

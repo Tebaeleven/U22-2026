@@ -184,6 +184,9 @@ describe("buildScripts", () => {
       switchScene: () => undefined,
       getCurrentScene: () => "default",
       setTimeScale: () => undefined,
+      beginBatch: () => undefined,
+      endBatch: () => undefined,
+      registerLiveVariable: () => undefined,
     }
 
     const sequencer = new Sequencer(callbacks)

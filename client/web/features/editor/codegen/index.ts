@@ -30,12 +30,16 @@ export function classCodeToBlockData(
   return generateBlockData(legacyAST)
 }
 
-/** 自動判定: class で始まればクラスベース、それ以外は旧形式で解析 */
+/** 自動判定: class キーワードが含まれればクラスベース、それ以外は旧形式で解析 */
 export function codeToBlockData(
   source: string,
 ): Record<string, BlockProjectData> {
-  const trimmed = source.trimStart()
-  if (trimmed.startsWith("class ")) {
+  // コメント行と空行を除去してから判定
+  const firstCode = source
+    .split("\n")
+    .map(l => l.trim())
+    .find(l => l.length > 0 && !l.startsWith("//"))
+  if (firstCode?.startsWith("class ")) {
     return classCodeToBlockData(source)
   }
   return pseudocodeToBlockData(source)

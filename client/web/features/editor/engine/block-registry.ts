@@ -20,6 +20,7 @@ import * as soundPrimitives from "./primitives/sound"
 import * as stateMachinePrimitives from "./primitives/state-machine"
 import * as sceneUtilPrimitives from "./primitives/scene-util"
 import * as spriteUtilPrimitives from "./primitives/sprite-util"
+import * as livePrimitives from "./primitives/live"
 
 const registry = new Map<string, BlockFunction>()
 
@@ -50,6 +51,7 @@ registerAll(soundPrimitives)
 registerAll(stateMachinePrimitives)
 registerAll(sceneUtilPrimitives)
 registerAll(spriteUtilPrimitives)
+registerAll(livePrimitives)
 
 export function getBlockFunction(opcode: string): BlockFunction | undefined {
   return registry.get(opcode)

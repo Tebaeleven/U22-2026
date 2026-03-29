@@ -131,6 +131,9 @@ function createBuiltinBlockDefs() {
     { category: "variables", name: "Variable", opcode: "data_variable", shape: "reporter", color: "#FF8C1A", inputs: [{ type: "dropdown", default: "my variable", options: V }] },
     { category: "variables", name: "Set", opcode: "data_setvariableto", shape: "stack", color: "#FF8C1A", inputs: [{ type: "dropdown", default: "my variable", options: V }, { type: "label", text: "to" }, { type: "number", default: 0 }] },
     { category: "variables", name: "Change", opcode: "data_changevariableby", shape: "stack", color: "#FF8C1A", inputs: [{ type: "dropdown", default: "my variable", options: V }, { type: "label", text: "by" }, { type: "number", default: 1 }] },
+    { category: "variables", name: "Set live", opcode: "data_setlivevariable", shape: "stack", color: "#FF8C1A", inputs: [{ type: "dropdown", default: "my variable", options: V }, { type: "label", text: "= live" }, { type: "number", default: 0 }], description: "依存変数が変わったら自動再計算される変数を設定" },
+    { category: "variables", name: "When live", opcode: "live_when", shape: "hat", color: "#FF8C1A", inputs: [{ type: "dropdown", default: "my variable", options: V }, { type: "label", text: "changes" }], description: "Live変数が変わるたびに実行" },
+    { category: "variables", name: "Upon live", opcode: "live_upon", shape: "hat", color: "#FF8C1A", inputs: [{ type: "dropdown", default: "my variable", options: V }, { type: "label", text: "≤ 0" }], description: "Live変数の条件が成立したら一度だけ実行" },
     { category: "variables", name: "Show variable", opcode: "data_showvariable", shape: "stack", color: "#FF8C1A", inputs: [{ type: "dropdown", default: "my variable", options: V }] },
     { category: "variables", name: "Hide variable", opcode: "data_hidevariable", shape: "stack", color: "#FF8C1A", inputs: [{ type: "dropdown", default: "my variable", options: V }] },
 
@@ -363,6 +366,7 @@ function createBuiltinBlockDefs() {
       inputs: [{ type: "variable-name", default: "item", editable: false, minWidth: 28, maxWidth: 96 }],
     },
     { category: "control", name: "Spawn", opcode: "control_spawn", shape: "c-block", color: "#FFAB19", inputs: [] },
+    { category: "control", name: "Batch", opcode: "control_batch", shape: "c-block", color: "#FFAB19", inputs: [{ type: "label", text: "batch" }] },
 
     // ─── モダン言語拡張: 辞書 ───
     { category: "lists", name: "Dict set", opcode: "data_dictset", shape: "stack", color: "#FF661A", inputs: [{ type: "dropdown", default: "my dict", options: D }, { type: "label", text: "key" }, { type: "text", default: "key" }, { type: "label", text: "to" }, { type: "text", default: "value" }] },

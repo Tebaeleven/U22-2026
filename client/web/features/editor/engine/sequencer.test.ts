@@ -94,6 +94,9 @@ function createSequencer(
     switchScene: () => undefined,
     getCurrentScene: () => "default",
     setTimeScale: () => undefined,
+    beginBatch: () => undefined,
+    endBatch: () => undefined,
+    registerLiveVariable: () => undefined,
   }
 
   return new Sequencer(callbacks)

@@ -209,6 +209,14 @@ export interface BlockUtil {
   getCurrentScene: () => string
   /** タイムスケールを設定 */
   setTimeScale: (scale: number) => void
+  // ── バッチ ──
+  /** バッチモード開始（Observer 通知を遅延する） */
+  beginBatch: () => void
+  /** バッチモード終了（溜まった通知をフラッシュする） */
+  endBatch: () => void
+  // ── Live Variable ──
+  /** Live 変数を登録（式ブロックを保存し、依存変数変更時に自動再計算） */
+  registerLiveVariable: (name: string, expressionBlock: ScriptBlock) => void
 }
 
 export type BlockFunction = (

@@ -313,6 +313,14 @@ function hatToOpcode(hat: HatNode): { opcode: string; inputValues: Record<string
       const argIdx = buildArgIndexMap("observer_whenvarchanges")
       return { opcode: "observer_whenvarchanges", inputValues: { [String(argIdx[0])]: hat.variable } }
     }
+    case "liveWhen": {
+      const argIdx = buildArgIndexMap("live_when")
+      return { opcode: "live_when", inputValues: { [String(argIdx[0])]: hat.variable } }
+    }
+    case "liveUpon": {
+      const argIdx = buildArgIndexMap("live_upon")
+      return { opcode: "live_upon", inputValues: { [String(argIdx[0])]: hat.variable } }
+    }
   }
 }
 
@@ -394,6 +402,9 @@ class BlockGenerator {
       case "for": return this.generateForRange(stmt)
       case "forEach": return this.generateForEach(stmt)
       case "spawn": return this.generateSpawn(stmt)
+      case "batch": return this.generateBatch(stmt)
+      case "varDecl": return this.generateAssign(stmt.name, stmt.value)
+      case "liveAssign": return this.generateLiveAssign(stmt.variable, stmt.value)
       case "break": return this.generateSimpleBlock("control_break")
       case "continue": return this.generateSimpleBlock("control_continue")
       case "return": return this.generateReturn(stmt)
@@ -431,6 +442,23 @@ class BlockGenerator {
   private generateAssign(variable: string, value: ExprNode): string {
     this.customVariables.add(variable)
     const opcode = "data_setvariableto"
+    const defId = opcodeToDefId.get(opcode)!
+    const argIdxMap = buildArgIndexMap(opcode)
+
+    const inputValues: Record<string, string> = {
+      [String(argIdxMap[0])]: variable,
+    }
+    const slotChildren: Record<string, string> = {}
+    this.resolveExprToSlot(value, String(argIdxMap[1]), inputValues, slotChildren)
+
+    return this.addBlock(defId, inputValues, { slotChildren })
+  }
+
+  // ── Live 変数設定 ──
+
+  private generateLiveAssign(variable: string, value: ExprNode): string {
+    this.customVariables.add(variable)
+    const opcode = "data_setlivevariable"
     const defId = opcodeToDefId.get(opcode)!
     const argIdxMap = buildArgIndexMap(opcode)
 
@@ -571,6 +599,15 @@ class BlockGenerator {
 
   private generateSpawn(stmt: { body: StatementNode[] }): string {
     const opcode = "control_spawn"
+    const defId = opcodeToDefId.get(opcode)!
+    const bodyIds = this.generateStatementsAsList(stmt.body)
+    return this.addBlock(defId, {}, { bodyChildren: [bodyIds] })
+  }
+
+  // ── batch 文 ──
+
+  private generateBatch(stmt: { body: StatementNode[] }): string {
+    const opcode = "control_batch"
     const defId = opcodeToDefId.get(opcode)!
     const bodyIds = this.generateStatementsAsList(stmt.body)
     return this.addBlock(defId, {}, { bodyChildren: [bodyIds] })

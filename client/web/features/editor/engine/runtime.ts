@@ -43,6 +43,16 @@ export class Runtime {
   private disabledWatchers: Map<string, Set<string>> = new Map()
   // --- Observer: 再帰防止ガード ---
   private notifyingVariable: string | null = null
+  // --- Observer: バッチ更新 ---
+  private batchDepth = 0
+  private batchPending: Map<string, { oldValue: unknown; newValue: unknown }> = new Map()
+  // --- Live Variable: 依存追跡・自動再計算 ---
+  private liveVariables: Array<{
+    name: string
+    spriteId: string
+    expressionBlock: ScriptBlock
+    deps: string[]
+  }> = []
   // --- クローン管理 ---
   private cloneCounter = 0
   private spriteDefs: SpriteDef[] = []
@@ -114,6 +124,10 @@ export class Runtime {
       switchScene: (name) => { this.currentScene = name },
       getCurrentScene: () => this.currentScene,
       setTimeScale: (scale) => { this.timeScale = scale },
+      beginBatch: () => this.beginBatch(),
+      endBatch: () => this.endBatch(),
+      registerLiveVariable: (spriteId, name, expressionBlock) =>
+        this.registerLiveVariable(spriteId, name, expressionBlock),
     })
   }
 
@@ -600,28 +614,90 @@ export class Runtime {
     const old = this.variables.get(name)
     this.variables.set(name, value)
     if (old !== value) {
-      this.onVariableChanged(name, old, value)
+      if (this.batchDepth > 0) {
+        // バッチ中: 通知を遅延。最初の old 値を保持する
+        if (!this.batchPending.has(name)) {
+          this.batchPending.set(name, { oldValue: old, newValue: value })
+        } else {
+          this.batchPending.get(name)!.newValue = value
+        }
+      } else {
+        this.onVariableChanged(name, old, value)
+      }
     }
   }
 
-  /** 変数変更時に Observer スレッドを spawn */
+  /** バッチモード開始 */
+  beginBatch() {
+    this.batchDepth++
+  }
+
+  /** バッチモード終了（溜まった通知をフラッシュ） */
+  endBatch() {
+    this.batchDepth--
+    if (this.batchDepth === 0 && this.batchPending.size > 0) {
+      const pending = new Map(this.batchPending)
+      this.batchPending.clear()
+      for (const [name, { oldValue, newValue }] of pending) {
+        this.onVariableChanged(name, oldValue, newValue)
+      }
+    }
+  }
+
+  /** 変数変更時に Observer / Live スレッドを spawn + Live 変数を再計算 */
   private onVariableChanged(name: string, oldValue: unknown, newValue: unknown) {
     if (this.notifyingVariable === name) return
     this.notifyingVariable = name
 
-    const disabled = this.disabledWatchers.get(name)
-    for (const s of this.scripts) {
-      if (s.opcode !== "observer_whenvarchanges") continue
-      if (disabled?.has(s.spriteId)) continue
+    // Live 変数の再計算（依存変数が変わったら式を再評価）
+    const changedLiveVars: string[] = []
+    for (const lv of this.liveVariables) {
+      if (lv.deps.includes(name)) {
+        const value = this.sequencer.evaluateExpression(lv.expressionBlock, lv.spriteId)
+        const oldLv = this.variables.get(lv.name)
+        if (oldLv !== value) {
+          this.variables.set(lv.name, value)
+          changedLiveVars.push(lv.name)
+        }
+      }
+    }
 
-      const varName = String(s.hatArgs.VARIABLE ?? "")
-      if (varName !== name) continue
+    // 変更された全変数（元の変数 + 連動更新された live 変数）に対してスクリプトを発火
+    const allChanged = [name, ...changedLiveVars]
+    for (const changedVar of allChanged) {
+      const ctx = changedVar === name
+        ? { newValue, oldValue }
+        : { newValue: this.variables.get(changedVar), oldValue: undefined }
 
-      this.restartThread(s.hatBlockId, s.spriteId, s.script, { newValue, oldValue })
+      const disabled = this.disabledWatchers.get(changedVar)
+      for (const s of this.scripts) {
+        // observer_whenvarchanges, live_when, live_upon の全てに対応
+        const isMatch = s.opcode === "observer_whenvarchanges"
+          || s.opcode === "live_when"
+          || s.opcode === "live_upon"
+        if (!isMatch) continue
+        if (disabled?.has(s.spriteId)) continue
+
+        const varName = String(s.hatArgs.VARIABLE ?? "")
+        if (varName !== changedVar) continue
+
+        this.restartThread(s.hatBlockId, s.spriteId, s.script, ctx)
+
+        // live_upon: 一度発火したら自動で監視停止
+        if (s.opcode === "live_upon") {
+          this.disableWatcher(changedVar, s.spriteId)
+        }
+      }
     }
 
     this.notifyingVariable = null
     this.ensureTickRunning()
+  }
+
+  /** Live 変数を登録: 式ブロックを保存し、依存変数を自動検出する */
+  registerLiveVariable(spriteId: string, name: string, expressionBlock: ScriptBlock) {
+    const deps = collectBlockDependencies(expressionBlock)
+    this.liveVariables.push({ name, spriteId, expressionBlock, deps })
   }
 
   /** イベントを送信し、対応する Observer スレッドを spawn */
@@ -865,5 +941,33 @@ export class Runtime {
 
   private getReporterPreviewKey(blockId: string, spriteId: string): string {
     return `${spriteId}:${blockId}`
+  }
+}
+
+/** ScriptBlock ツリーを再帰走査し、data_variable の変数名を全て収集する */
+function collectBlockDependencies(block: ScriptBlock): string[] {
+  const deps = new Set<string>()
+  walkBlock(block, deps)
+  return [...deps]
+}
+
+function walkBlock(block: ScriptBlock, deps: Set<string>): void {
+  if (block.opcode === "data_variable") {
+    const varName = String(block.args.VARIABLE ?? "")
+    if (varName) deps.add(varName)
+  }
+  for (const child of Object.values(block.inputBlocks)) {
+    walkBlock(child, deps)
+  }
+  for (const branch of block.branches) {
+    if (branch) walkBlockChain(branch, deps)
+  }
+}
+
+function walkBlockChain(block: ScriptBlock | null, deps: Set<string>): void {
+  let current = block
+  while (current) {
+    walkBlock(current, deps)
+    current = current.next
   }
 }

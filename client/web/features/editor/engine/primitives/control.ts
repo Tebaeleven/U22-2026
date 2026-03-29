@@ -184,3 +184,15 @@ export function control_foreach_variable(args: BlockArgs, util: BlockUtil): unkn
 export function control_spawn(_args: BlockArgs, util: BlockUtil) {
   util.spawnThread()
 }
+
+/** batch: Observer 通知を遅延して一括実行する C ブロック */
+export function control_batch(_args: BlockArgs, util: BlockUtil) {
+  const frame = util.stackFrame
+  if (!frame.batchStarted) {
+    frame.batchStarted = true
+    util.beginBatch()
+    util.startBranch(0, false)
+  } else {
+    util.endBatch()
+  }
+}

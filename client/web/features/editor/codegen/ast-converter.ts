@@ -10,14 +10,46 @@ export function classASTToLegacyAST(program: ClassProgramAST): ProgramAST {
 
 function classToSprite(cls: ClassAST): ProgramAST[number] {
   const variables = new Set<string>()
+
+  // フィールド宣言から変数を収集
+  const fieldInits: StatementNode[] = []
+  if (cls.fields) {
+    for (const field of cls.fields) {
+      variables.add(field.name)
+      if (field.live) {
+        // var live → liveAssign 文（ランタイムが式ブロックを保持して依存追跡する）
+        fieldInits.push({ type: "liveAssign", variable: field.name, value: field.value })
+      } else {
+        fieldInits.push({ type: "assign", variable: field.name, value: field.value })
+      }
+    }
+  }
+
   for (const method of cls.methods) {
     collectVariables(method.body, variables)
+  }
+
+  // onCreate メソッドの先頭にフィールド初期化を挿入
+  const scripts: ScriptAST[] = []
+  for (const method of cls.methods) {
+    const script = methodToScript(method)
+
+    if (method.kind.type === "onCreate" && fieldInits.length > 0) {
+      script.body = [...fieldInits, ...script.body]
+    }
+
+    scripts.push(script)
+  }
+
+  // onCreate がない場合でもフィールド初期化が必要ならスクリプトを生成
+  if (fieldInits.length > 0 && !cls.methods.some(m => m.kind.type === "onCreate")) {
+    scripts.unshift({ hat: { type: "flagClicked" }, body: fieldInits })
   }
 
   return {
     name: cls.name,
     variables: variables.size > 0 ? [...variables] : undefined,
-    scripts: cls.methods.map(m => methodToScript(m)),
+    scripts,
   }
 }
 
@@ -47,6 +79,10 @@ function methodKindToHat(kind: MethodKind): HatNode {
       return { type: "event", name: kind.name }
     case "onVarChange":
       return { type: "varChange", variable: kind.variable }
+    case "onWatch":
+      return { type: "liveWhen", variable: kind.variable }
+    case "onWatchOnce":
+      return { type: "liveUpon", variable: kind.variable }
   }
 }
 
@@ -86,6 +122,15 @@ function collectFromStatement(stmt: StatementNode, vars: Set<string>): void {
       collectVariables(stmt.body, vars)
       break
     case "spawn":
+      collectVariables(stmt.body, vars)
+      break
+    case "varDecl":
+      vars.add(stmt.name)
+      break
+    case "liveAssign":
+      vars.add(stmt.variable)
+      break
+    case "batch":
       collectVariables(stmt.body, vars)
       break
     case "break":

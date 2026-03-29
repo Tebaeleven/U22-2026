@@ -37,6 +37,9 @@ export interface SequencerCallbacks {
   switchScene: (name: string) => void
   getCurrentScene: () => string
   setTimeScale: (scale: number) => void
+  beginBatch: () => void
+  endBatch: () => void
+  registerLiveVariable: (spriteId: string, name: string, expressionBlock: ScriptBlock) => void
 }
 
 /**
@@ -164,6 +167,11 @@ export class Sequencer {
         setTimeScale: (scale: number) => {
           this.callbacks.setTimeScale(scale)
         },
+        beginBatch: () => this.callbacks.beginBatch(),
+        endBatch: () => this.callbacks.endBatch(),
+        registerLiveVariable: (name: string, expressionBlock: ScriptBlock) => {
+          this.callbacks.registerLiveVariable(thread.spriteId, name, expressionBlock)
+        },
       }
 
       const resolvedArgs = this.resolveInputBlocks(block, block.args, thread, util)
@@ -182,6 +190,15 @@ export class Sequencer {
         }
         steps += 1
         continue
+      }
+
+      // data_setlivevariable: 式ブロックをランタイムに登録（初回のみ）
+      if (block.opcode === "data_setlivevariable") {
+        const exprBlock = block.inputBlocks.VALUE
+        if (exprBlock) {
+          const varName = String(resolvedArgs.VARIABLE ?? "")
+          this.callbacks.registerLiveVariable(thread.spriteId, varName, exprBlock)
+        }
       }
 
       const fn = getBlockFunction(block.opcode)
@@ -224,6 +241,52 @@ export class Sequencer {
     if (steps >= MAX_STEPS && thread.status === "running") {
       thread.status = "yield_tick"
     }
+  }
+
+  /** Live Variable の式を評価する（onVariableChanged から呼ばれる） */
+  evaluateExpression(expressionBlock: ScriptBlock, spriteId: string): unknown {
+    const sprite = this.callbacks.getSprite(spriteId)
+    if (!sprite) return undefined
+    const dummyThread = new Thread(expressionBlock, spriteId, null)
+    const util: BlockUtil = {
+      stackFrame: {},
+      startBranch: () => {},
+      yield: () => {},
+      getSprite: () => sprite,
+      getAllSprites: () => this.callbacks.getAllSprites(),
+      getSpriteByName: (name: string) => this.callbacks.getSpriteByName(name),
+      stageWidth: STAGE_WIDTH,
+      stageHeight: STAGE_HEIGHT,
+      getContext: () => undefined,
+      getVariable: (name: string) => this.callbacks.getVariable(name),
+      getLoopVariable: () => undefined,
+      setVariable: (name: string, value: unknown) => this.callbacks.setVariable(name, value),
+      sendEvent: () => {},
+      disableWatcher: () => {},
+      isKeyPressed: (key: string) => this.callbacks.isKeyPressed(key),
+      getMouseX: () => this.callbacks.getMouseX(),
+      getMouseY: () => this.callbacks.getMouseY(),
+      getScene: () => this.callbacks.getScene(),
+      createClone: () => {},
+      deleteClone: () => {},
+      onCollide: () => {},
+      getCollisionTarget: () => "",
+      restartGame: () => {},
+      now: () => this.callbacks.now(),
+      addInterval: () => {},
+      removeInterval: () => {},
+      addTimeout: () => {},
+      breakLoop: () => {},
+      continueLoop: () => {},
+      spawnThread: () => {},
+      switchScene: () => {},
+      getCurrentScene: () => this.callbacks.getCurrentScene(),
+      setTimeScale: () => {},
+      beginBatch: () => {},
+      endBatch: () => {},
+      registerLiveVariable: () => {},
+    }
+    return this.executeReporter(expressionBlock, dummyThread, util)
   }
 
   /** スロット内 Reporter/Boolean の戻り値で引数を上書き */

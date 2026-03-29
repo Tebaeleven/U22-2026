@@ -67,6 +67,7 @@ import { stateMachineDemo } from "./control/state-machine-demo"
 import { spawnDemo } from "./control/spawn-demo"
 import { saveLoadDemo } from "./control/save-load-demo"
 import { tagGroupDemo } from "./control/tag-group-demo"
+import { liveVariableDemo } from "./control/live-variable-demo"
 import { lerpClampDemo } from "./math/lerp-clamp-demo"
 import { stringOpsDemo } from "./math/string-ops-demo"
 import { mathFunctionsDemo } from "./math/math-functions-demo"
@@ -154,7 +155,7 @@ export const SAMPLE_CATEGORIES: SampleCategory[] = [
     id: "control-advanced",
     name: "Advanced Control",
     description: "状態マシン・forEach・spawn・タグ・セーブ",
-    samples: [forEachDemo, stateMachineDemo, spawnDemo, tagGroupDemo, saveLoadDemo],
+    samples: [forEachDemo, stateMachineDemo, spawnDemo, tagGroupDemo, saveLoadDemo, liveVariableDemo],
   },
   {
     id: "sound",

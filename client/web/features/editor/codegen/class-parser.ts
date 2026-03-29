@@ -1,7 +1,7 @@
 // クラスベース疑似コード → ClassProgramAST パーサー（トークナイザー + 再帰降下）
 
 import type { StatementNode, ExprNode } from "./ast-types"
-import type { ClassProgramAST, ClassAST, MethodAST, MethodKind } from "./class-ast-types"
+import type { ClassProgramAST, ClassAST, MethodAST, MethodKind, FieldDecl } from "./class-ast-types"
 
 // ── トークン定義 ──
 
@@ -25,9 +25,10 @@ const KEYWORDS = new Set([
   "if", "else", "while", "repeat", "for", "in", "return",
   "break", "continue", "spawn", "forEach",
   "true", "false",
+  "var", "let", "live", "when", "upon", "batch",
 ])
 
-const TWO_CHAR_OPS = new Set(["==", "!=", ">=", "<=", "&&", "||", "+=", ".."])
+const TWO_CHAR_OPS = new Set(["==", "!=", ">=", "<=", "&&", "||", "+=", "-=", "*=", "/=", "%=", ".."])
 const SINGLE_CHAR_OPS = new Set(["+", "-", "*", "/", "%", ">", "<", "!", "="])
 const PUNCTUATION = new Set(["(", ")", "{", "}", ",", "."])
 
@@ -225,12 +226,75 @@ class ClassParser {
     const name = this.expect("identifier").value
     this.expect("punctuation", "{")
 
+    const fields: FieldDecl[] = []
     const methods: MethodAST[] = []
     while (!this.match("punctuation", "}")) {
-      methods.push(this.parseMethod())
+      const t = this.peek()
+      // var / let フィールド宣言
+      if (t.type === "keyword" && (t.value === "var" || t.value === "let")) {
+        fields.push(this.parseFieldDecl())
+      // when (expr) { body }
+      } else if (t.type === "keyword" && t.value === "when") {
+        methods.push(this.parseWhen())
+      // upon (expr) { body }
+      } else if (t.type === "keyword" && t.value === "upon") {
+        methods.push(this.parseUpon())
+      } else {
+        methods.push(this.parseMethod())
+      }
     }
 
-    return { name, methods }
+    return { name, fields: fields.length > 0 ? fields : undefined, methods }
+  }
+
+  // ── フィールド宣言 ──
+
+  private parseFieldDecl(): FieldDecl {
+    const keyword = this.advance().value // "var" or "let"
+    const mutable = keyword === "var"
+
+    // var live name = expr
+    let live = false
+    if (mutable && this.peek().type === "keyword" && this.peek().value === "live") {
+      this.advance()
+      live = true
+    }
+
+    const name = this.expect("identifier").value
+    this.expect("operator", "=")
+    const value = this.parseExpression()
+    return { name, value, mutable, ...(live ? { live: true } : {}) }
+  }
+
+  // ── when / upon ──
+
+  private parseWhen(): MethodAST {
+    this.expect("keyword", "when")
+    this.expect("punctuation", "(")
+    // when (this.variable) の形式を想定
+    const expr = this.parseExpression()
+    this.expect("punctuation", ")")
+    this.expect("punctuation", "{")
+    const body = this.parseStatements()
+    this.expect("punctuation", "}")
+
+    // 式からthis.xxx の変数名を抽出
+    const variable = extractWatchVariable(expr)
+    return { kind: { type: "onWatch", variable }, body }
+  }
+
+  private parseUpon(): MethodAST {
+    this.expect("keyword", "upon")
+    this.expect("punctuation", "(")
+    const condition = this.parseExpression()
+    this.expect("punctuation", ")")
+    this.expect("punctuation", "{")
+    const body = this.parseStatements()
+    this.expect("punctuation", "}")
+
+    // 条件式から監視対象の変数名を抽出
+    const variable = extractWatchVariable(condition)
+    return { kind: { type: "onWatchOnce", variable, condition }, body }
   }
 
   // ── Method ──
@@ -319,6 +383,8 @@ class ClassParser {
         case "for": return this.parseFor()
         case "forEach": return this.parseForEach()
         case "spawn": return this.parseSpawn()
+        case "batch": return this.parseBatch()
+        case "var": return this.parseVarDecl()
         case "break": { this.advance(); return { type: "break" } }
         case "continue": { this.advance(); return { type: "continue" } }
         case "return": return this.parseReturn()
@@ -346,6 +412,13 @@ class ClassParser {
         this.advance()
         const value = this.parseExpression()
         return { type: "changeBy", variable: name, value }
+      }
+
+      // -= *= /= %= を式展開に変換
+      if (next.type === "operator" && (next.value === "-=" || next.value === "*=" || next.value === "/=" || next.value === "%=")) {
+        const op = this.advance().value[0] // "-=" → "-"
+        const value = this.parseExpression()
+        return { type: "assign", variable: name, value: { type: "binary", op, left: { type: "variable", name }, right: value } }
       }
 
       if (next.type === "punctuation" && next.value === "(") {
@@ -398,6 +471,13 @@ class ClassParser {
         return { type: "call", name: callName, args: [value] }
       }
       return { type: "changeBy", variable: name, value }
+    }
+
+    // this.prop -= *= /= %= expr を式展開に変換
+    if (next.type === "operator" && (next.value === "-=" || next.value === "*=" || next.value === "/=" || next.value === "%=")) {
+      const op = this.advance().value[0]
+      const value = this.parseExpression()
+      return { type: "assign", variable: name, value: { type: "binary", op, left: { type: "variable", name }, right: value } }
     }
 
     // this.method(args)
@@ -511,8 +591,29 @@ class ClassParser {
 
   private parseReturn(): StatementNode {
     this.expect("keyword", "return")
+    // 値なし return: 次のトークンが } なら式を省略
+    const next = this.peek()
+    if (next.type === "punctuation" && next.value === "}") {
+      return { type: "return", value: { type: "number", value: 0 } }
+    }
     const value = this.parseExpression()
     return { type: "return", value }
+  }
+
+  private parseVarDecl(): StatementNode {
+    this.expect("keyword", "var")
+    const name = this.expect("identifier").value
+    this.expect("operator", "=")
+    const value = this.parseExpression()
+    return { type: "varDecl", name, value }
+  }
+
+  private parseBatch(): StatementNode {
+    this.expect("keyword", "batch")
+    this.expect("punctuation", "{")
+    const body = this.parseStatements()
+    this.expect("punctuation", "}")
+    return { type: "batch", body }
   }
 
   // ── 引数リスト ──
@@ -652,6 +753,52 @@ class ClassParser {
     }
 
     throw new Error(`Unexpected token in expression: ${t.type} "${t.value}" at line ${t.line}`)
+  }
+}
+
+// ── ヘルパー ──
+
+/** 式から最初に見つかった this.xxx の変数名を抽出する */
+function extractWatchVariable(expr: ExprNode): string {
+  if (expr.type === "variable") return expr.name
+  if (expr.type === "binary") {
+    return extractWatchVariable(expr.left) || extractWatchVariable(expr.right)
+  }
+  if (expr.type === "unary") return extractWatchVariable(expr.operand)
+  if (expr.type === "call") {
+    for (const arg of expr.args) {
+      const v = extractWatchVariable(arg)
+      if (v) return v
+    }
+  }
+  return ""
+}
+
+/** 式から全ての this.xxx 変数名を収集する（live 変数の依存解析用） */
+export function extractAllDependencies(expr: ExprNode): string[] {
+  const deps = new Set<string>()
+  collectDeps(expr, deps)
+  return [...deps]
+}
+
+function collectDeps(expr: ExprNode, deps: Set<string>): void {
+  switch (expr.type) {
+    case "variable":
+      deps.add(expr.name)
+      break
+    case "binary":
+      collectDeps(expr.left, deps)
+      collectDeps(expr.right, deps)
+      break
+    case "unary":
+      collectDeps(expr.operand, deps)
+      break
+    case "call":
+      for (const arg of expr.args) collectDeps(arg, deps)
+      break
+    case "property":
+      // velocity.x 等 — object 側を依存として追加はしない（this.velocity.x はプリミティブ）
+      break
   }
 }
 

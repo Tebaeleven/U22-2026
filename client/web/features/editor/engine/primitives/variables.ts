@@ -10,6 +10,12 @@ export function data_setvariableto(args: BlockArgs, util: BlockUtil) {
   util.setVariable(String(args.VARIABLE), args.VALUE)
 }
 
+/** Live 変数を設定: 初期値を計算し、依存変数が変わったら自動再計算する
+ *  ※ 式ブロックの登録は Sequencer が data_setlivevariable を検出して行う */
+export function data_setlivevariable(args: BlockArgs, util: BlockUtil) {
+  util.setVariable(String(args.VARIABLE), args.VALUE)
+}
+
 /** 変数の値を増減 */
 export function data_changevariableby(args: BlockArgs, util: BlockUtil) {
   const name = String(args.VARIABLE)
