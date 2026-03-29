@@ -14,15 +14,10 @@ import {
   C_HEADER_H,
   C_BODY_MIN_H,
   C_W,
-  INLINE_GAP,
   INLINE_HEIGHT_PADDING,
   INLINE_PADDING_X,
-  getHeaderReporterCopies,
-  getHeaderReporterCopyLabel,
   getInputValue,
-  hatReporterChipWidth,
   inputWidth,
-  estimateTextWidth,
   resolveBlockBehavior,
 } from "./blocks"
 
@@ -174,51 +169,39 @@ function computeSlotLayout(
     )
   )
 
-  // インライントークンのカーソルベース配置
-  let cursor =
-    INLINE_PADDING_X +
-    estimateTextWidth(def.name) +
-    (def.name ? INLINE_GAP : 0)
-
-  for (let i = 0; i < def.inputs.length; i += 1) {
-    const input = def.inputs[i]
-    const baseWidth = inputWidth(input, inputValues[i])
-
-    if (input.type === "label") {
-      cursor += baseWidth + INLINE_GAP
-      continue
+  // headerRow AutoLayout で自動配置
+  const headerRow = block.headerRow
+  if (headerRow) {
+    // スロット placeholder のサイズを実際のスロットサイズに同期
+    for (const slot of block.slotLayouts) {
+      if (slot.placeholder) {
+        const usedWidth = Math.max(slot.info.w, slot.layout.width)
+        const usedHeight = Math.max(slot.info.h, slot.layout.height)
+        slot.placeholder.width = usedWidth
+        slot.placeholder.height = usedHeight
+      }
     }
 
-    const slot = slotByIndex.get(i)
-    if (!slot) {
-      cursor += baseWidth + INLINE_GAP
-      continue
+    headerRow.minHeight = headerHeight
+    headerRow.update()
+
+    // placeholder の絶対位置をスロットのローカル位置に変換して同期
+    const containerPos = block.container.position
+    for (const slot of block.slotLayouts) {
+      if (slot.placeholder) {
+        slot.layout.position.x = slot.placeholder.position.x - containerPos.x
+        slot.layout.position.y = slot.placeholder.position.y - containerPos.y
+        slot.layout.relayout()
+      }
     }
-
-    const usedWidth = Math.max(baseWidth, slot.layout.width)
-    const usedHeight = Math.max(slot.info.h, slot.layout.height)
-    slot.layout.position.x = cursor
-    slot.layout.position.y = (headerHeight - usedHeight) / 2
-    slot.layout.relayout()
-    cursor += usedWidth + INLINE_GAP
   }
 
-  const headerReporterCopies = getHeaderReporterCopies(def)
-  for (const copy of headerReporterCopies) {
-    cursor +=
-      hatReporterChipWidth(getHeaderReporterCopyLabel(copy, block.state)) +
-      INLINE_GAP
-  }
+  // ヘッダー幅を headerRow から取得
+  const headerRowWidth = headerRow
+    ? headerRow.width + INLINE_PADDING_X * 2
+    : baseSize.w
 
-  const hasInlineTokens =
-    def.inputs.length > 0 || headerReporterCopies.length > 0
-
-  const requiredWidth = Math.max(
-    baseSize.w,
-    Math.ceil(
-      cursor + INLINE_PADDING_X - (hasInlineTokens ? INLINE_GAP : 0)
-    )
-  )
+  const requiredWidth = Math.max(baseSize.w, Math.ceil(headerRowWidth))
   const requiredHeight = Math.max(baseSize.h, headerHeight)
 
   return { headerHeight, requiredWidth, requiredHeight }

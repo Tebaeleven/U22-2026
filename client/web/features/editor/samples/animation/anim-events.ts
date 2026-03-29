@@ -23,7 +23,7 @@ class アクター {
     this.playAnim("explode")
     this.updateTextAt("st", "Playing...")
   }
-  onMessage("boom") {
+  onEvent("boom") {
     this.emitParticles(this.x, this.y, 30, "#ff3333", 300)
     this.emitParticles(this.x, this.y, 20, "#ffcc00", 250)
     this.cameraShake(200, 0.02)

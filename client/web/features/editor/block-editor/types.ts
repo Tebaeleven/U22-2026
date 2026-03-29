@@ -218,6 +218,8 @@ export type SlotLayoutRef = {
   info: SlotInfo
   layout: AutoLayout
   connector: Connector | null
+  /** headerRow 内の位置計算用プレースホルダー Container */
+  placeholder?: Container
 }
 
 /** ワークスペース上に配置されたブロック。コンテナ・コネクタ・状態を一括管理 */
@@ -229,6 +231,10 @@ export type CreatedBlock = {
   slotLayouts: SlotLayoutRef[]
   valueConnector: Connector | null
   state: BlockState
+  /** ヘッダー行の横並べ AutoLayout（ラベル + スロットを自動配置） */
+  headerRow: AutoLayout | null
+  /** ラベル用ダミー Container の参照（幅更新用） */
+  labelContainers: Container[]
 }
 
 /** ブロックの状態・コンテナ・生成情報のレジストリ */

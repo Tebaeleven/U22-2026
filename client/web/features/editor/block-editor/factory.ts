@@ -1,6 +1,6 @@
 import { AutoLayout, Connector, Container } from "headless-vpl"
 import type { Workspace } from "headless-vpl"
-import type { BlockDef, CBlockRef, CreatedBlock, SlotLayoutRef } from "./types"
+import type { BlockDef, CBlockRef, CreatedBlock, SlotInfo, SlotLayoutRef } from "./types"
 import {
   BOOLEAN_CONNECTOR_HIT_RADIUS,
   C_BODY_ENTRY_HIT_RADIUS,
@@ -11,8 +11,16 @@ import {
   C_HEADER_H,
   C_W,
   CONN_OFFSET_X,
-  computeSlotPositions,
+  INLINE_GAP,
+  INLINE_PADDING_X,
+  INLINE_SLOT_BASE_H,
+  computeSlotInfos,
   createInitialInputValues,
+  estimateTextWidth,
+  getHeaderReporterCopies,
+  getHeaderReporterCopyLabel,
+  hatReporterChipWidth,
+  inputWidth,
   resolveBlockBehavior,
 } from "./blocks"
 
@@ -109,26 +117,86 @@ export function createBlock(
     }
   }
 
+  // --- headerRow AutoLayout（ラベル + スロットを横並べ） ---
+  const blockH = isCBlock ? C_HEADER_H : h
+  const headerRow = new AutoLayout({
+    position: [INLINE_PADDING_X, 0],
+    direction: "horizontal",
+    gap: INLINE_GAP,
+    alignment: "center",
+    minHeight: INLINE_SLOT_BASE_H,
+    resizesParent: false,
+  })
+  children.headerRow = headerRow
+
+  // ラベル用ダミー Container（workspace なしで SvgRenderer に描画されない）
+  const labelContainers: Container[] = []
+
+  const createLabelContainer = (text: string, namePrefix: string): Container => {
+    const lbl = new Container({
+      name: namePrefix,
+      width: estimateTextWidth(text),
+      height: INLINE_SLOT_BASE_H,
+    })
+    labelContainers.push(lbl)
+    return lbl
+  }
+
+  // ブロック名をラベルとして追加
+  if (def.name) {
+    const nameContainer = createLabelContainer(def.name, "label_name")
+    headerRow.Children.push(nameContainer)
+  }
+
   // --- Slot layouts ---
-  const slotPositions = computeSlotPositions(def, state.inputValues)
+  const slotInfos = computeSlotInfos(def, state.inputValues)
+  const slotInfoMap = new Map<number, SlotInfo>(slotInfos.map((s) => [s.inputIndex, s]))
   const slotLayouts: SlotLayoutRef[] = []
-  for (const slot of slotPositions) {
+
+  for (let i = 0; i < def.inputs.length; i += 1) {
+    const input = def.inputs[i]
+
+    if (input.type === "label") {
+      const lbl = createLabelContainer(input.text, `label_${i}`)
+      headerRow.Children.push(lbl)
+      continue
+    }
+
+    if (input.type === "param-chip") {
+      const lbl = createLabelContainer(input.label, `chip_${i}`)
+      headerRow.Children.push(lbl)
+      continue
+    }
+
+    // スロット（number, text, dropdown, boolean-slot, variable-name）
+    const slotInfo = slotInfoMap.get(i)
+    if (!slotInfo) continue
+
+    // headerRow にスロットと同じサイズのダミー Container を配置（位置計算用）
+    const slotPlaceholder = new Container({
+      name: `slotPlaceholder_${slotInfo.inputIndex}`,
+      width: slotInfo.w,
+      height: slotInfo.h,
+    })
+    headerRow.Children.push(slotPlaceholder)
+
+    // 実際のスロット AutoLayout は Container.children に登録（ネスト・アンカー用）
     const slotLayout = new AutoLayout({
-      position: [slot.x, slot.y],
+      position: [0, 0],
       direction: "horizontal",
       gap: 0,
       alignment: "center",
-      minWidth: slot.w,
-      minHeight: slot.h,
+      minWidth: slotInfo.w,
+      minHeight: slotInfo.h,
       resizesParent: false,
     })
-    children[`slot${slot.inputIndex}`] = slotLayout
+    children[`slot${slotInfo.inputIndex}`] = slotLayout
 
     const isBooleanSlot =
-      slot.acceptedShapes.length === 1 && slot.acceptedShapes[0] === "boolean"
+      slotInfo.acceptedShapes.length === 1 && slotInfo.acceptedShapes[0] === "boolean"
     const slotConnector = isBooleanSlot
       ? new Connector({
-          name: `slot-connector-${slot.inputIndex}`,
+          name: `slot-connector-${slotInfo.inputIndex}`,
           type: "input",
           hitRadius: BOOLEAN_CONNECTOR_HIT_RADIUS,
           anchor: { target: slotLayout, origin: "center-right" },
@@ -136,8 +204,17 @@ export function createBlock(
       : null
 
     if (slotConnector)
-      children[`slotConnector${slot.inputIndex}`] = slotConnector
-    slotLayouts.push({ info: slot, layout: slotLayout, connector: slotConnector })
+      children[`slotConnector${slotInfo.inputIndex}`] = slotConnector
+    slotLayouts.push({ info: slotInfo, layout: slotLayout, connector: slotConnector, placeholder: slotPlaceholder })
+  }
+
+  // ヘッダーレポーターコピーもラベルとして追加
+  const headerReporterCopies = getHeaderReporterCopies(def)
+  for (const copy of headerReporterCopies) {
+    const label = getHeaderReporterCopyLabel(copy, state)
+    const lbl = createLabelContainer(label, `hrc_${copy.label}`)
+    lbl.width = hatReporterChipWidth(label)
+    headerRow.Children.push(lbl)
   }
 
   // --- Container ---
@@ -184,5 +261,7 @@ export function createBlock(
     slotLayouts,
     valueConnector,
     state,
+    headerRow,
+    labelContainers,
   }
 }

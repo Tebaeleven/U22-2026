@@ -16,12 +16,24 @@ import {
 } from "./constants"
 import { resolveBlockBehavior } from "./block-behavior"
 
-/** テキスト幅をピクセル単位で概算する */
+/** テキスト幅をピクセル単位で概算する（font-size: 12px 基準） */
 export function estimateTextWidth(text: string): number {
   let w = 0
   for (let i = 0; i < text.length; i++) {
-    // ASCII 範囲は半角幅、それ以外（日本語等）は全角幅
-    w += text.charCodeAt(i) > 127 ? 13 : 7.5
+    const code = text.charCodeAt(i)
+    if (code <= 32) {
+      // スペース
+      w += 7.5
+    } else if (code === 58) {
+      // コロン「:」は狭く
+      w += 4
+    } else if (code <= 127) {
+      // ASCII 半角文字
+      w += 7.5
+    } else {
+      // 日本語等の全角文字
+      w += 13
+    }
   }
   return w
 }
@@ -235,17 +247,11 @@ export function getInputIndexBySerializationKey(
 }
 
 /** ブロック定義と入力値からスロットの位置・サイズを計算する */
-export function computeSlotPositions(
+/** スロット情報を抽出する（位置は headerRow AutoLayout が自動計算するため含まない） */
+export function computeSlotInfos(
   def: BlockDef,
   inputValues: Record<number, string> = createInitialInputValues(def.inputs)
 ): SlotInfo[] {
-  let cursor =
-    INLINE_PADDING_X +
-    estimateTextWidth(def.name) +
-    (def.name ? INLINE_GAP : 0)
-  const behavior = resolveBlockBehavior(def)
-  const blockH = behavior.bodies.length > 0 ? C_HEADER_H : behavior.size.h
-  const slotY = (blockH - INLINE_SLOT_BASE_H) / 2
   const slots: SlotInfo[] = []
 
   for (let i = 0; i < def.inputs.length; i += 1) {
@@ -258,15 +264,17 @@ export function computeSlotPositions(
     ) {
       slots.push({
         inputIndex: i,
-        x: cursor,
-        y: slotY,
+        x: 0,
+        y: 0,
         w,
         h: INLINE_SLOT_BASE_H,
         acceptedShapes: getAcceptedValueShapes(input),
       })
     }
-    cursor += w + INLINE_GAP
   }
 
   return slots
 }
+
+/** @deprecated headerRow AutoLayout 導入前の互換用。computeSlotInfos を使うこと */
+export const computeSlotPositions = computeSlotInfos

@@ -22,6 +22,7 @@ import {
   getHeaderReporterCopyLabel,
   getInputDisplayValue,
   getInputValue,
+  estimateTextWidth,
   hatReporterChipWidth,
   inputWidth,
   isInlineReporterVariableInput,
@@ -85,7 +86,14 @@ function InlineToken({
   ) => void
 }) {
   if (input.type === "label") {
-    return <span className="scratch-label-token">{input.text}</span>
+    return (
+      <span
+        className="scratch-label-token"
+        style={{ width: estimateTextWidth(input.text), flexShrink: 0 }}
+      >
+        {input.text}
+      </span>
+    )
   }
 
   if (input.type === "param-chip") {
@@ -353,7 +361,7 @@ export function BlockView({
           }
         }}
       >
-        {def.name && <span>{def.name}</span>}
+        {def.name && <span style={{ width: estimateTextWidth(def.name), flexShrink: 0 }}>{def.name}</span>}
         {renderInputs()}
       </div>
     )
@@ -377,7 +385,7 @@ export function BlockView({
           }
         }}
       >
-        {def.name && <span>{def.name}</span>}
+        {def.name && <span style={{ width: estimateTextWidth(def.name), flexShrink: 0 }}>{def.name}</span>}
         {renderInputs()}
         <HeaderReporterCopies
           block={block}
@@ -407,7 +415,7 @@ export function BlockView({
             height: cBlockRef?.container.padding.top ?? C_HEADER_H,
           }}
         >
-          {def.name && <span>{def.name}</span>}
+          {def.name && <span style={{ width: estimateTextWidth(def.name), flexShrink: 0 }}>{def.name}</span>}
           {renderInputs()}
           <HeaderReporterCopies
             block={block}
@@ -452,7 +460,7 @@ export function BlockView({
       className="scratch-block scratch-stack"
       style={{ ...blockStyle, background: bg, minWidth: behavior.size.w }}
     >
-      {def.name && <span>{def.name}</span>}
+      {def.name && <span style={{ width: estimateTextWidth(def.name), flexShrink: 0 }}>{def.name}</span>}
       {renderInputs()}
       <HeaderReporterCopies
         block={block}

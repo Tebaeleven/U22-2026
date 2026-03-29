@@ -58,6 +58,7 @@ export {
   getInputSerializationKey,
   getInputIndexBySerializationKey,
   computeSlotPositions,
+  computeSlotInfos,
 } from "./blocks/input-helpers"
 
 export {
