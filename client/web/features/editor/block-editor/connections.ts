@@ -1,9 +1,8 @@
 // ブロック接続・ゾーン登録・近接判定
 import {
-  createSlotZone,
   createStackSnapConnections,
 } from "headless-vpl/helpers"
-import { createConnectorInsertZone, isConnectorColliding } from "headless-vpl/blocks"
+import { findConnectorInsertHit, isConnectorColliding } from "headless-vpl/blocks"
 import { NestingZone } from "headless-vpl"
 import type {
   SnapConnection,
@@ -29,7 +28,6 @@ const ZONE_PRIORITY = {
 
 const SLOT_ZONE_PADDING = 0
 const BODY_ZONE_PADDING = 10
-const SLOT_CENTER_TOLERANCE = { x: 30, y: 20 }
 
 /** ドラッグされたブロックの形状を検証するバリデーターを生成する */
 function createShapeValidator(
@@ -43,8 +41,8 @@ function createShapeValidator(
   }
 }
 
-/** ブーリアンスロット用のネスティングゾーンを生成する */
-function createBooleanSlotZone(
+/** コネクタベースのスロットネスティングゾーンを生成する */
+function createConnectorSlotZone(
   ws: Workspace,
   block: CreatedBlock,
   createdMap: Map<string, CreatedBlock>,
@@ -56,9 +54,10 @@ function createBooleanSlotZone(
     workspace: ws,
     priority: ZONE_PRIORITY.SLOT,
     padding: SLOT_ZONE_PADDING,
+    skipNearLayoutCheck: true,
     validator: (dragged) => {
       if (slot.layout.Children.length > 0) return false
-      return createShapeValidator(createdMap, ["boolean"])(dragged)
+      return createShapeValidator(createdMap, slot.info.acceptedShapes)(dragged)
     },
     connectorHit: (dragged) => {
       const draggedBlock = createdMap.get(dragged.id)
@@ -162,21 +161,47 @@ export function registerCBlockBodyZones(
 
     block.cBlockRef.bodyLayouts.forEach((layout, index) => {
       const bodyEntryConnector = block.cBlockRef?.bodyEntryConnectors[index]
-      const zone = createConnectorInsertZone({
+      const entry = bodyEntryConnector ?? undefined
+      const getDraggedConnector = (dragged: { id: string }) =>
+        registry.createdMap.get(dragged.id)?.topConn
+      const getChildConnector = (child: { id: string }) =>
+        registry.createdMap.get(child.id)?.bottomConn
+
+      // createConnectorInsertZone と同等だが skipNearLayoutCheck を有効にする。
+      // デフォルトの isNearLayout はドラッグブロックの「中心」で判定するため、
+      // If など背の高い C ブロックで topConn を bodyEntry に合わせたときでも
+      // 中心がボディ矩形外になりホバーが棄却され、ネストできなくなる。
+      const zone = new NestingZone({
         target: block.container,
         layout,
         workspace: ws,
-        entryConnector: bodyEntryConnector ?? undefined,
         priority: ZONE_PRIORITY.BODY,
         padding: BODY_ZONE_PADDING,
-        accepts: (dragged) => {
+        skipNearLayoutCheck: true,
+        validator: (dragged) => {
+          if (dragged === block.container) return false
           const draggedState = registry.blockMap.get(dragged.id)
-          return !(draggedState && isValueBlockShape(draggedState.def.shape))
+          if (draggedState && isValueBlockShape(draggedState.def.shape)) {
+            return false
+          }
+          return (
+            findConnectorInsertHit({
+              dragged,
+              layout,
+              entryConnector: entry,
+              getDraggedConnector,
+              getChildConnector,
+            }) !== null
+          )
         },
-        getDraggedConnector: (dragged) =>
-          registry.createdMap.get(dragged.id)?.topConn,
-        getChildConnector: (child) =>
-          registry.createdMap.get(child.id)?.bottomConn,
+        connectorHit: (dragged, currentLayout) =>
+          findConnectorInsertHit({
+            dragged,
+            layout: currentLayout,
+            entryConnector: entry,
+            getDraggedConnector,
+            getChildConnector,
+          })?.insertIndex ?? null,
       })
 
       nestingZones.push(zone)
@@ -185,7 +210,7 @@ export function registerCBlockBodyZones(
   }
 }
 
-/** レポーター/ブーリアンスロットのネスティングゾーンを登録する */
+/** レポーター/ブーリアンスロットのネスティングゾーンを登録する（コネクタベース） */
 export function registerSlotZones(
   ws: Workspace,
   created: CreatedBlock[],
@@ -195,23 +220,12 @@ export function registerSlotZones(
 ) {
   for (const block of created) {
     for (const slot of block.slotLayouts) {
-      const { info, layout } = slot
+      const { info } = slot
       if (info.acceptedShapes.length === 0) continue
-      const isBooleanSlot =
-        info.acceptedShapes.length === 1 &&
-        info.acceptedShapes[0] === "boolean"
-      const zone = isBooleanSlot
-        ? createBooleanSlotZone(ws, block, registry.createdMap, slot)
-        : createSlotZone({
-            target: block.container,
-            layout,
-            workspace: ws,
-            priority: ZONE_PRIORITY.SLOT,
-            occupancy: "single",
-            accepts: createShapeValidator(registry.createdMap, info.acceptedShapes),
-            centerTolerance: SLOT_CENTER_TOLERANCE,
-            padding: SLOT_ZONE_PADDING,
-          })
+      if (!slot.connector) continue
+
+      // 全スロットでコネクタベースのネスティングゾーンを使用
+      const zone = createConnectorSlotZone(ws, block, registry.createdMap, slot)
 
       nestingZones.push(zone)
       slotZoneMap.set(zone, {
@@ -244,6 +258,52 @@ export function collectBodyZoneProximityHits(
     const sourceConnector = hit.draggedBlock.topConn
     const targetConnector = hit.targetConnector
     const connectionId = `body-hit:${sourceConnector.id}:${targetConnector.id}`
+    hits.set(connectionId, {
+      source: dragged,
+      sourcePosition: sourceConnector.position,
+      targetPosition: targetConnector.position,
+      snapDistance: sourceConnector.hitRadius + targetConnector.hitRadius,
+    })
+  }
+
+  return hits
+}
+
+/** ドラッグ中のレポーターに対するスロットゾーンの近接ヒットを収集する（value ↔ slot コネクタ） */
+export function collectSlotZoneProximityHits(
+  slotZoneMap: Map<NestingZone, SlotZoneMeta>,
+  createdMap: Map<string, CreatedBlock>
+): Map<string, ProximityHit> {
+  const hits = new Map<string, ProximityHit>()
+
+  for (const [zone, meta] of slotZoneMap.entries()) {
+    const dragged = zone.hovered
+    if (!dragged) continue
+
+    const draggedBlock = createdMap.get(dragged.id)
+    const hostBlock = createdMap.get(meta.blockId)
+    if (!draggedBlock?.valueConnector || !hostBlock) continue
+
+    const slot = hostBlock.slotLayouts.find(
+      (s) => s.info.inputIndex === meta.inputIndex
+    )
+    if (!slot?.connector) continue
+    if (slot.layout.Children.length > 0) continue
+
+    const shape = draggedBlock.state.def.shape
+    if (!shape || !isValueBlockShape(shape)) continue
+    if (!slot.info.acceptedShapes.includes(shape)) continue
+
+    const sourceConnector = draggedBlock.valueConnector
+    const targetConnector = slot.connector
+    // 近接ハイライトは SvgRenderer が connector.hitRadius の円で描く（headless-vpl）。
+    // collidesWith と同じ閾値に限ることで、赤表示のタイミングと円の見た目が一致する。
+    // 別距離で緩めると、円より離れた位置で赤くなる。
+    if (!isConnectorColliding(sourceConnector, targetConnector)) {
+      continue
+    }
+
+    const connectionId = `slot-hit:${sourceConnector.id}:${targetConnector.id}`
     hits.set(connectionId, {
       source: dragged,
       sourcePosition: sourceConnector.position,

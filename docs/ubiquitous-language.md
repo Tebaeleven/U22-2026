@@ -113,12 +113,12 @@
 | -------------- | ---------------------- | ------- | ------------------------------------------------- |
 | **topConn**    | `top`                  | input   | ブロック上部の受け口。上のブロックの bottomConn と接続する              |
 | **bottomConn** | `bottom`               | output  | ブロック下部の差し込み口。下のブロックの topConn と接続する               |
-| **valueConn**  | `value`                | output  | レポーター/ブーリアンブロックの右端の差し込み口。スロットに接続する              |
+| **valueConn**  | `value`                | output  | レポーター/ブーリアンブロックの左端の差し込み口。スロットの slotConn と接続する |
 | **bodyEntry1** | `body-entry-1`         | input   | Cブロックのボディ1（条件成立側）の受け口。ボディ内の最初のブロックと接続する        |
 | **bodyEntry2** | `body-entry-2`         | input   | C-elseブロックのボディ2（else側）の受け口。else内の最初のブロックと接続する   |
-| **slotConn{N}** | `slot-connector-{N}`  | input   | ブーリアンスロットの受け口。N はブロック定義の入力インデックス                |
+| **slotConn{N}** | `slot-connector-{N}`  | input   | スロットの左端の受け口。レポーター/ブーリアンの valueConn と接続する。N はブロック定義の入力インデックス |
 
-※ slotConn はブロック定義の inputs 配列に `boolean-slot` がある場合のみ生成される。
+※ slotConn は全スロット（number, text, dropdown, boolean-slot）に対して生成される。
 
 
 ### ブロック形状ごとのコネクタ構成
@@ -268,18 +268,33 @@
 bodyEntry1 は近接判定（ドラッグ時の吸着）に使用される。
 ```
 
-#### 3. スロット接続（値ブロックのはめ込み）
+#### 3. スロット接続（値ブロックのはめ込み — コネクタベース）
+
+スロットの**左端**に slotConn (input)、レポーター/ブーリアンの**左端**に valueConn (output) を配置。
+コネクタ同士の距離が snapDistance 以内になるとスナップ接続が成立する。
 
 ```
-╭──┴──────────────────────────╮
-│  もし  ◇─────◇  なら        │
-│        slotConn0 (input)    │ ← 親の受け口
-│         ↕                   │
-│        valueConn (output)   │ ← 子の差し込み口
-│       ◇──────────────◇      │
-│       │ マウスが押された │      │
-│       ◇──────────────◇      │
-╰──┬──────────────────────────╯
+╭──┴───────────────────────────────╮
+│  Go to  [x:]  ●──[  0  ]  [y:]  │   ● = slotConn0 (input, left)
+╰──┬───────────────────────────────╯
+                 ↕  SnapConnection
+╭────────────────╮
+●  X position    │                     ● = valueConn (output, left)
+╰────────────────╯
+
+ペア: Reporter.valueConn (output) → GoTo.slotConn0 (input)
+```
+
+ブーリアンスロットも同じコネクタベース:
+
+```
+╭──┴───────────────────────────╮
+│  もし  ●──◇─────◇  なら      │   ● = slotConn0 (input, left)
+╰──┬───────────────────────────╯
+              ↕  SnapConnection
+◇────────────────────◇
+●  マウスが押された    │                ● = valueConn (output, left)
+◇────────────────────◇
 
 ペア: Boolean.valueConn (output) → If.slotConn0 (input)
 ```

@@ -66,7 +66,7 @@ export function createBlock(
         name: "value",
         type: "output",
         hitRadius: BOOLEAN_CONNECTOR_HIT_RADIUS,
-        anchor: { target: "parent", origin: "center-right" },
+        anchor: { target: "parent", origin: "center-left" },
       })
     : null
 
@@ -192,19 +192,14 @@ export function createBlock(
     })
     children[`slot${slotInfo.inputIndex}`] = slotLayout
 
-    const isBooleanSlot =
-      slotInfo.acceptedShapes.length === 1 && slotInfo.acceptedShapes[0] === "boolean"
-    const slotConnector = isBooleanSlot
-      ? new Connector({
-          name: `slot-connector-${slotInfo.inputIndex}`,
-          type: "input",
-          hitRadius: BOOLEAN_CONNECTOR_HIT_RADIUS,
-          anchor: { target: slotLayout, origin: "center-right" },
-        })
-      : null
-
-    if (slotConnector)
-      children[`slotConnector${slotInfo.inputIndex}`] = slotConnector
+    // 全スロットにコネクタを追加（スロット左端、レポーター/ブーリアンの valueConn と接続）
+    const slotConnector = new Connector({
+      name: `slot-connector-${slotInfo.inputIndex}`,
+      type: "input",
+      hitRadius: BOOLEAN_CONNECTOR_HIT_RADIUS,
+      anchor: { target: slotLayout, origin: "center-left" },
+    })
+    children[`slotConnector${slotInfo.inputIndex}`] = slotConnector
     slotLayouts.push({ info: slotInfo, layout: slotLayout, connector: slotConnector, placeholder: slotPlaceholder })
   }
 

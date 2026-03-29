@@ -36,6 +36,7 @@ import {
 } from "./blocks"
 import {
   collectBodyZoneProximityHits,
+  collectSlotZoneProximityHits,
   rebuildStackSnapConnections,
   registerCBlockBodyZones,
   registerSlotZones,
@@ -597,7 +598,17 @@ export class BlockEditorController {
     this.stopProximityLoop = startProximityLoop(
       this.workspace,
       this.activeBodyProximityIds,
-      () => collectBodyZoneProximityHits(this.bodyZoneMap, this.createdMap)
+      () => {
+        const bodyHits = collectBodyZoneProximityHits(
+          this.bodyZoneMap,
+          this.createdMap
+        )
+        const slotHits = collectSlotZoneProximityHits(
+          this.slotZoneMap,
+          this.createdMap
+        )
+        return new Map([...bodyHits, ...slotHits])
+      }
     )
   }
 

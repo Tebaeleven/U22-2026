@@ -17,6 +17,7 @@ export const INLINE_GAP = 6
 export const INLINE_SLOT_BASE_H = 24
 export const INLINE_HEIGHT_PADDING = 8
 export const BOOLEAN_SLOT_W = 36
+/** value/slot の Connector.hitRadius。当たり・デバッグ SVG の円半径は headless-vpl が同じ値で描く。 */
 export const BOOLEAN_CONNECTOR_HIT_RADIUS = 12
 export const HAT_REPORTER_CHIP_MIN_W = 48
 export const INPUT_MIN_W = 40
