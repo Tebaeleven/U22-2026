@@ -151,6 +151,13 @@ client/web/features/editor/
 - headless-vpl は Git サブモジュール。変更時は本体リポジトリとの整合性に注意
 - 全て日本語で返答すること
 
+### `.vpl-canvas` 内の SVG に関する注意
+
+- `globals.css` で `.vpl-canvas > svg` に `width: 100%; height: 100%; position: absolute;` が設定されている
+- このルールは **直接の子SVG要素のみ**（ワークスペース用のメインSVG）に適用される
+- `.vpl-canvas` 内に配置するコンポーネント（ツールバー、パネル等）で lucide-react 等の SVG アイコンを使う場合、このルールの影響を受けないように `> svg`（子セレクタ）が維持されていることを確認すること
+- `.vpl-canvas svg`（子孫セレクタ）に変更すると全 SVG アイコンが画面全体に引き伸ばされるバグが再発する
+
 ### headless-vpl に関する制約
 
 - **headless-vpl（`libs/headless-vpl/`）のコードは絶対に変更しないこと**

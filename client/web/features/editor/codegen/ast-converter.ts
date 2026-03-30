@@ -55,10 +55,23 @@ function classToSprite(cls: ClassAST): ProgramAST[number] {
 
 function methodToScript(method: MethodAST): ScriptAST {
   const hat = methodKindToHat(method.kind)
-  // onUpdate は forever でラップして毎フレーム実行にする
-  const body: StatementNode[] = method.kind.type === "onUpdate"
-    ? [{ type: "forever", body: method.body }]
-    : method.body
+
+  let body: StatementNode[]
+  if (method.kind.type === "onUpdate") {
+    body = [{ type: "forever", body: method.body }]
+  } else if (method.kind.type === "onWatchOnce") {
+    // upon: 条件成立時のみボディ実行 + 自動で監視停止
+    body = [{
+      type: "if",
+      condition: method.kind.condition,
+      body: [
+        ...method.body,
+        { type: "call", name: "unwatch", args: [{ type: "string", value: method.kind.variable }] },
+      ],
+    }]
+  } else {
+    body = method.body
+  }
 
   return { hat, body }
 }

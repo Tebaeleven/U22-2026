@@ -80,9 +80,18 @@ function tokenize(source: string): Token[] {
     // 数値リテラル
     if (ch >= "0" && ch <= "9") {
       let num = ""
-      while (pos < source.length && ((source[pos] >= "0" && source[pos] <= "9") || source[pos] === ".")) {
+      while (pos < source.length && (source[pos] >= "0" && source[pos] <= "9")) {
         num += source[pos]
         pos++
+      }
+      // 小数点: 次が "." かつその次も "." なら ".." 演算子なので消費しない
+      if (pos < source.length && source[pos] === "." && source[pos + 1] !== ".") {
+        num += source[pos]
+        pos++
+        while (pos < source.length && source[pos] >= "0" && source[pos] <= "9") {
+          num += source[pos]
+          pos++
+        }
       }
       tokens.push({ type: "number", value: num, line })
       continue
@@ -602,6 +611,14 @@ class ClassParser {
 
   private parseVarDecl(): StatementNode {
     this.expect("keyword", "var")
+    // var live name = expr（メソッド内でも live 変数を宣言可能）
+    if (this.peek().type === "keyword" && this.peek().value === "live") {
+      this.advance()
+      const name = this.expect("identifier").value
+      this.expect("operator", "=")
+      const value = this.parseExpression()
+      return { type: "liveAssign", variable: name, value }
+    }
     const name = this.expect("identifier").value
     this.expect("operator", "=")
     const value = this.parseExpression()

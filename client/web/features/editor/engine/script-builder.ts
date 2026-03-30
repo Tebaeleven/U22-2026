@@ -161,6 +161,8 @@ function getArgName(
     event_whenkeypressed: ["KEY_OPTION"],
     observer_whenvarchanges: ["VARIABLE"],
     observer_stopwatching: ["VARIABLE"],
+    live_when: ["VARIABLE"],
+    live_upon: ["VARIABLE"],
     observer_sendevent: ["EVENT_NAME", "DATA"],
     observer_wheneventreceived: ["EVENT_NAME"],
     sensing_touchingobject: ["TOUCHINGOBJECTMENU"],

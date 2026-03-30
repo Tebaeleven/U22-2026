@@ -10,8 +10,17 @@ function resolveArg(argName: string, block: ScriptBlock): string {
   return String(block.args[argName] ?? "")
 }
 
+/** 文字列引数を引用符付きで解決する（ネストされた reporter の場合はそのまま） */
+function resolveStringArg(argName: string, block: ScriptBlock): string {
+  const nested = block.inputBlocks[argName]
+  if (nested) return reporterToInline(nested)
+  const val = String(block.args[argName] ?? "")
+  return `"${val}"`
+}
+
 function reporterToInline(block: ScriptBlock): string {
   const r = (name: string) => resolveArg(name, block)
+  const rs = (name: string) => resolveStringArg(name, block)
 
   switch (block.opcode) {
     case "data_variable":
@@ -49,7 +58,7 @@ function reporterToInline(block: ScriptBlock): string {
     case "sensing_touchingobject":
       return `this.touching(${r("TOUCHINGOBJECTMENU")})`
     case "sensing_keypressed":
-      return `this.isKeyPressed("${r("KEY_OPTION")}")`
+      return `this.isKeyPressed(${rs("KEY_OPTION")})`
     case "sensing_mousex":
       return "this.mouseX"
     case "sensing_mousey":
@@ -87,9 +96,9 @@ function reporterToInline(block: ScriptBlock): string {
     case "math_randomint":
       return `randomInt(${r("FROM")}, ${r("TO")})`
     case "math_angleto":
-      return `this.angleTo("${r("TARGET")}")`
+      return `this.angleTo(${rs("TARGET")})`
     case "math_distanceto":
-      return `this.distanceTo("${r("TARGET")}")`
+      return `this.distanceTo(${rs("TARGET")})`
     case "math_abs":
       return `abs(${r("NUM")})`
     case "math_min":
@@ -112,6 +121,7 @@ function reporterToInline(block: ScriptBlock): string {
 function blockToLines(block: ScriptBlock, indent: number): string[] {
   const pad = "  ".repeat(indent)
   const r = (name: string) => resolveArg(name, block)
+  const rs = (name: string) => resolveStringArg(name, block)
 
   const body = (branchIndex: number): string[] =>
     chainToLines(block.branches[branchIndex] ?? null, indent + 1)
@@ -157,15 +167,15 @@ function blockToLines(block: ScriptBlock, indent: number): string[] {
 
     // ── Looks ──
     case "looks_sayforsecs":
-      return [`${pad}this.say(${r("MESSAGE")}, ${r("SECS")})`]
+      return [`${pad}this.say(${rs("MESSAGE")}, ${r("SECS")})`]
     case "looks_think":
-      return [`${pad}this.think(${r("MESSAGE")})`]
+      return [`${pad}this.think(${rs("MESSAGE")})`]
     case "looks_setsizeto":
       return [`${pad}this.size = ${r("SIZE")}`]
     case "looks_changesizeby":
       return [`${pad}this.size += ${r("CHANGE")}`]
     case "looks_switchcostumeto":
-      return [`${pad}this.costume = "${r("COSTUME")}"`]
+      return [`${pad}this.costume = ${rs("COSTUME")}`]
     case "looks_show":
       return [`${pad}this.show()`]
     case "looks_hide":
@@ -173,25 +183,25 @@ function blockToLines(block: ScriptBlock, indent: number): string[] {
     case "looks_nextcostume":
       return [`${pad}this.nextCostume()`]
     case "looks_settint":
-      return [`${pad}this.setTint(${r("COLOR")})`]
+      return [`${pad}this.setTint(${rs("COLOR")})`]
     case "looks_cleartint":
       return [`${pad}this.clearTint()`]
     case "looks_setopacity":
       return [`${pad}this.setAlpha(${r("OPACITY")})`]
     case "looks_setflipx":
-      return [`${pad}this.setFlipX(${r("ENABLED")})`]
+      return [`${pad}this.setFlipX(${rs("ENABLED")})`]
     case "looks_addtext":
-      return [`${pad}this.addText("${r("TEXT")}", ${r("X")}, ${r("Y")})`]
+      return [`${pad}this.addText(${rs("TEXT")}, ${r("X")}, ${r("Y")})`]
     case "looks_updatetext":
-      return [`${pad}this.setText(${r("TEXT")})`]
+      return [`${pad}this.setText(${rs("TEXT")})`]
     case "looks_removetext":
       return [`${pad}this.removeText()`]
     case "looks_floatingtext":
-      return [`${pad}this.floatingText("${r("TEXT")}")`]
+      return [`${pad}this.floatingText(${rs("TEXT")})`]
 
     // ── Graphics ──
     case "graphics_fillrect":
-      return [`${pad}this.graphics.fillRect(${r("X")}, ${r("Y")}, ${r("W")}, ${r("H")}, ${r("COLOR")})`]
+      return [`${pad}this.graphics.fillRect(${r("X")}, ${r("Y")}, ${r("W")}, ${r("H")}, ${rs("COLOR")})`]
     case "graphics_clear":
       return [`${pad}this.graphics.clear()`]
 
@@ -261,10 +271,26 @@ function blockToLines(block: ScriptBlock, indent: number): string[] {
         ...body(0),
         `${pad}}`,
       ]
+    case "control_spawn":
+      return [
+        `${pad}spawn {`,
+        ...body(0),
+        `${pad}}`,
+      ]
+    case "control_batch":
+      return [
+        `${pad}batch {`,
+        ...body(0),
+        `${pad}}`,
+      ]
+    case "control_break":
+      return [`${pad}break`]
+    case "control_continue":
+      return [`${pad}continue`]
 
     // ── Physics ──
     case "physics_setmode":
-      return [`${pad}this.setPhysics("${r("MODE")}")`]
+      return [`${pad}this.setPhysics(${rs("MODE")})`]
     case "physics_setgravity":
       return [`${pad}this.setGravity(${r("GRAVITY")})`]
     case "physics_setvelocity":
@@ -276,31 +302,33 @@ function blockToLines(block: ScriptBlock, indent: number): string[] {
     case "physics_setbounce":
       return [`${pad}this.setBounce(${r("BOUNCE")})`]
     case "physics_setcollideworldbounds":
-      return [`${pad}this.setCollideWorldBounds(${r("ENABLED")})`]
+      return [`${pad}this.setCollideWorldBounds(${rs("ENABLED")})`]
     case "physics_setallowgravity":
-      return [`${pad}this.setAllowGravity(${r("ENABLED")})`]
+      return [`${pad}this.setAllowGravity(${rs("ENABLED")})`]
     case "physics_disablebody":
       return [`${pad}this.disableBody()`]
     case "physics_enablebody":
       return [`${pad}this.enableBody()`]
     case "physics_oncollide":
-      return [`${pad}this.onCollide("${r("TARGET")}", "${r("EVENT_NAME")}")`]
+      return [`${pad}this.onCollide(${rs("TARGET")}, ${rs("EVENT_NAME")})`]
 
     // ── Clone ──
     case "clone_create":
-      return [`${pad}this.createClone("${r("TARGET")}")`]
+      return [`${pad}this.createClone(${rs("TARGET")})`]
     case "clone_delete":
       return [`${pad}this.deleteClone()`]
 
     // ── Events ──
     case "observer_sendevent":
-      return [`${pad}this.emit("${r("EVENT_NAME")}")`]
+      return [`${pad}this.emit(${rs("EVENT_NAME")})`]
     case "observer_stopwatching":
       return [`${pad}this.unwatch(${r("VARIABLE")})`]
 
     // ── Variables ──
     case "data_setvariableto":
       return [`${pad}this.${r("VARIABLE")} = ${r("VALUE")}`]
+    case "data_setlivevariable":
+      return [`${pad}var live ${r("VARIABLE")} = ${r("VALUE")}`]
     case "data_changevariableby":
       return [`${pad}this.${r("VARIABLE")} += ${r("VALUE")}`]
     case "data_showvariable":
@@ -326,23 +354,23 @@ function blockToLines(block: ScriptBlock, indent: number): string[] {
 
     // ── テキスト拡張 ──
     case "text_addat":
-      return [`${pad}this.addTextAt("${r("ID")}", "${r("TEXT")}", ${r("X")}, ${r("Y")}, ${r("SIZE")}, "${r("COLOR")}")`]
+      return [`${pad}this.addTextAt(${rs("ID")}, ${rs("TEXT")}, ${r("X")}, ${r("Y")}, ${r("SIZE")}, ${rs("COLOR")})`]
     case "text_updateat":
-      return [`${pad}this.updateTextAt("${r("ID")}", ${r("TEXT")})`]
+      return [`${pad}this.updateTextAt(${rs("ID")}, ${rs("TEXT")})`]
     case "text_removeat":
-      return [`${pad}this.removeTextAt("${r("ID")}")`]
+      return [`${pad}this.removeTextAt(${rs("ID")})`]
 
     // ── パーティクル ──
     case "particle_emit":
-      return [`${pad}this.emitParticles(${r("X")}, ${r("Y")}, ${r("COUNT")}, "${r("COLOR")}", ${r("SPEED")})`]
+      return [`${pad}this.emitParticles(${r("X")}, ${r("Y")}, ${r("COUNT")}, ${rs("COLOR")}, ${r("SPEED")})`]
 
     // ── タイマー ──
     case "timer_setinterval":
-      return [`${pad}this.setInterval("${r("EVENT")}", ${r("MS")})`]
+      return [`${pad}this.setInterval(${rs("EVENT")}, ${r("MS")})`]
     case "timer_clearinterval":
-      return [`${pad}this.clearInterval("${r("EVENT")}")`]
+      return [`${pad}this.clearInterval(${rs("EVENT")})`]
     case "timer_settimeout":
-      return [`${pad}this.setTimeout("${r("EVENT")}", ${r("MS")})`]
+      return [`${pad}this.setTimeout(${rs("EVENT")}, ${r("MS")})`]
 
     // ── Procedures ──
     case "procedures_return":
@@ -385,6 +413,10 @@ function hatToMethodHeader(es: CompiledEventScript): string {
       return `onEvent("${String(hatArgs["EVENT_NAME"] ?? "")}")`
     case "observer_whenvarchanges":
       return `onVarChange("${String(hatArgs["VARIABLE"] ?? "")}")`
+    case "live_when":
+      return `when (this.${String(hatArgs["VARIABLE"] ?? "")})`
+    case "live_upon":
+      return `upon (this.${String(hatArgs["VARIABLE"] ?? "")})`
     default:
       return `on_${es.opcode}()`
   }

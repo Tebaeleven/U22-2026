@@ -37,6 +37,7 @@ import { setSelectedCategory } from "@/lib/store/slices/ui"
 import { EditorHeader, type EditorTileId, TILE_TITLES } from "@/features/editor/components/editor-header"
 import { BlockPalette } from "@/features/editor/components/block-palette"
 import { BlockWorkspace } from "@/features/editor/components/block-workspace"
+import { TextEditor } from "@/features/editor/components/text-editor"
 import { SpriteList } from "@/features/editor/components/sprite-list"
 import { HierarchyPanel } from "@/features/editor/components/hierarchy-panel"
 import { InspectorPanel } from "@/features/editor/components/inspector-panel"
@@ -56,7 +57,9 @@ import { ShortcutsDialog } from "@/features/editor/components/shortcuts-dialog"
 import { ConsolePanel } from "@/features/editor/components/console-panel"
 import { SampleBrowser } from "@/features/editor/components/sample-browser"
 import { AssetBrowser } from "@/features/editor/components/asset-browser"
-import { buildProgramsForSprites } from "@/features/editor/engine/program-builder"
+import { ModelDiagramWorkspace } from "@/features/editor/model-diagram/components/model-diagram-workspace"
+import { buildProgramsForSprites, compileProgramFromProjectData } from "@/features/editor/engine/program-builder"
+import { codeToBlockData } from "@/features/editor/codegen"
 import { Runtime } from "@/features/editor/engine/runtime"
 import {
   getController,
@@ -233,7 +236,7 @@ function addTile(
 
 // ─── エディタタブ（コード / コスチューム / 当たり判定） ──
 
-type EditorTab = "code" | "costumes" | "collider" | "sounds"
+type EditorTab = "code" | "text" | "costumes" | "collider" | "sounds" | "model-diagram"
 
 export function EditorContent() {
   const dispatch = useAppDispatch()
@@ -268,8 +271,29 @@ export function EditorContent() {
     setMosaicLayout(DEFAULT_LAYOUT)
   }, [])
 
+  // ── URL クエリパラメータ ──
+  const initialTab = (searchParams.get("tab") as EditorTab) || "code"
+  const initialSample = searchParams.get("sample")
+
+  // URL クエリを更新するヘルパー（ページ遷移せずに URL を書き換える）
+  const updateQueryParam = useCallback((key: string, value: string | null) => {
+    const url = new URL(window.location.href)
+    if (value) {
+      url.searchParams.set(key, value)
+    } else {
+      url.searchParams.delete(key)
+    }
+    window.history.replaceState({}, "", url.toString())
+  }, [])
+
   // ワークスペースのタブ（コード / コスチューム / 当たり判定）
-  const [editorTab, setEditorTab] = useState<EditorTab>("code")
+  const [editorTab, setEditorTabRaw] = useState<EditorTab>(initialTab)
+  const setEditorTab = useCallback((tab: EditorTab) => {
+    setEditorTabRaw(tab)
+    updateQueryParam("tab", tab === "code" ? null : tab)
+  }, [updateQueryParam])
+  // テキストエディタのコード（テキストモードでの実行用）
+  const textCodeRef = useRef("")
   const [stageExpanded, setStageExpanded] = useState(false)
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [debugView, setDebugView] = useState(false)
@@ -288,6 +312,28 @@ export function EditorContent() {
       runtimeRef.current?.stop()
     }
   }, [])
+
+  // URL の ?sample= パラメータから初期サンプルを読み込む
+  const initialSampleLoadedRef = useRef(false)
+  useEffect(() => {
+    if (initialSampleLoadedRef.current || !initialSample) return
+    initialSampleLoadedRef.current = true
+    // handleLoadSample がまだ定義されていないので、setTimeout で遅延
+    setTimeout(() => {
+      const sample = SAMPLE_PROJECTS.find((s) => s.id === initialSample)
+      if (sample) {
+        const { sprites: newSprites, blockDataMap: newBlockData } = resolveSample(sample)
+        const firstSpriteId = newSprites[0]?.id ?? ""
+        dispatch(loadAllBlockData(newBlockData))
+        dispatch(setSprites(newSprites))
+        dispatch(selectSprite(firstSpriteId))
+        dispatch(setProjectName(sample.name))
+        const firstData = newBlockData[firstSpriteId] ?? DEFAULT_BLOCK_PROJECT_DATA
+        getController().loadProjectData(firstData)
+        setCurrentSampleId(initialSample)
+      }
+    }, 0)
+  }, [initialSample, dispatch])
 
   // ブラウザフルスクリーン状態の追跡
   useEffect(() => {
@@ -370,6 +416,51 @@ export function EditorContent() {
       return
     }
 
+    // テキストモード: テキストコードから直接コンパイル→実行
+    if (editorTab === "text" && textCodeRef.current.trim()) {
+      try {
+        const textBlockData = codeToBlockData(textCodeRef.current)
+        const textPrograms: Record<string, import("../engine/types").CompiledProgram> = {}
+        for (const sprite of sprites) {
+          const data = textBlockData[sprite.name]
+          if (data) {
+            textPrograms[sprite.id] = compileProgramFromProjectData(data)
+          } else {
+            textPrograms[sprite.id] = { eventScripts: [], procedures: {} }
+          }
+        }
+
+        const hasAnyScript = Object.values(textPrograms).some((p) => p.eventScripts.length > 0)
+        if (!hasAnyScript) return
+
+        runtime.onSpritesUpdate = (runtimeSprites) => {
+          stageRef.current?.updateSprites(runtimeSprites)
+          expandedStageRef.current?.updateSprites(runtimeSprites)
+          dispatch(
+            batchUpdatePositions(
+              runtimeSprites.map((s) => ({
+                id: s.id,
+                x: s.x,
+                y: s.y,
+                direction: s.direction,
+                costumeIndex: s.costumeIndex,
+              }))
+            )
+          )
+        }
+        runtime.onStop = () => { dispatch(stopRuntime()) }
+        dispatch(saveSnapshot())
+        dispatch(startRuntime())
+        const scene = expandedStageRef.current?.getScene() ?? stageRef.current?.getScene() ?? undefined
+        runtime.setSpeedMode(speedMode)
+        runtime.start(sprites, textPrograms, scene)
+        return
+      } catch (e) {
+        console.error("テキストコードのコンパイルに失敗:", e)
+        return
+      }
+    }
+
     const controller = getController()
     if (!controller) return
 
@@ -416,7 +507,7 @@ export function EditorContent() {
     const scene = expandedStageRef.current?.getScene() ?? stageRef.current?.getScene() ?? undefined
     runtime.setSpeedMode(speedMode)
     runtime.start(sprites, programs, scene)
-  }, [sprites, selectedSpriteId, blockDataMap, dispatch, speedMode])
+  }, [sprites, selectedSpriteId, blockDataMap, dispatch, speedMode, editorTab])
 
   const handlePause = useCallback(() => {
     runtimeRef.current?.pause()
@@ -499,7 +590,8 @@ export function EditorContent() {
     getController().loadProjectData(firstData)
 
     setCurrentSampleId(sampleId)
-  }, [dispatch])
+    updateQueryParam("sample", sampleId)
+  }, [dispatch, updateQueryParam])
 
   // ─── コスチューム操作 ─────────────────────────────
 
@@ -590,6 +682,14 @@ export function EditorContent() {
             onDeleteSound={(spriteId, soundId) => dispatch(deleteSound({ spriteId, soundId }))}
             runtimeRef={runtimeRef}
             debugView={debugView}
+            onTextCodeChange={(code) => { textCodeRef.current = code }}
+            pseudocode={textCodeRef.current || SAMPLE_PROJECTS.find((s) => s.id === currentSampleId)?.pseudocode}
+            sprites={sprites}
+            blockDataMap={blockDataMap}
+            onNavigateToSprite={(spriteId) => {
+              dispatch(selectSprite(spriteId))
+              setEditorTab("code")
+            }}
           />
         ),
         stage: (
@@ -925,6 +1025,11 @@ function WorkspaceWithTabs({
   onDeleteSound,
   runtimeRef,
   debugView,
+  onTextCodeChange,
+  pseudocode,
+  sprites,
+  blockDataMap,
+  onNavigateToSprite,
 }: {
   editorTab: EditorTab
   onTabChange: (tab: EditorTab) => void
@@ -940,11 +1045,23 @@ function WorkspaceWithTabs({
   onDeleteSound: (spriteId: string, soundId: string) => void
   runtimeRef: RefObject<Runtime | null>
   debugView?: boolean
+  onTextCodeChange?: (code: string) => void
+  pseudocode?: string
+  sprites: import("@/features/editor/constants").SpriteDef[]
+  blockDataMap: Record<string, import("@/features/editor/block-editor/types").BlockProjectData>
+  onNavigateToSprite?: (spriteId: string) => void
 }) {
+  // モデル図は初回表示時にマウント、以降は hidden でも維持
+  const [diagramMounted, setDiagramMounted] = useState(false)
+  useEffect(() => {
+    if (editorTab === "model-diagram") setDiagramMounted(true)
+  }, [editorTab])
+
   return (
     <div className="flex flex-col h-full">
       {/* タブバー */}
       <div className="flex border-b border-gray-200 bg-gray-50 shrink-0">
+        {/* スプライト固有タブ */}
         <button
           onClick={() => onTabChange("code")}
           className={`px-4 py-1.5 text-xs font-medium cursor-pointer transition-colors ${
@@ -985,6 +1102,31 @@ function WorkspaceWithTabs({
         >
           サウンド
         </button>
+
+        {/* 区切り線 + グローバルタブ */}
+        <div className="ml-auto flex items-center">
+          <div className="w-px h-4 bg-gray-300 mx-1" />
+          <button
+            onClick={() => onTabChange("text")}
+            className={`px-4 py-1.5 text-xs font-medium cursor-pointer transition-colors ${
+              editorTab === "text"
+                ? "border-b-2 border-[#FF6B6B] text-[#FF6B6B] bg-white"
+                : "text-gray-500 hover:text-gray-700"
+            }`}
+          >
+            テキストコード
+          </button>
+          <button
+            onClick={() => onTabChange("model-diagram")}
+            className={`px-4 py-1.5 text-xs font-medium cursor-pointer transition-colors ${
+              editorTab === "model-diagram"
+                ? "border-b-2 border-[#10b981] text-[#10b981] bg-white"
+                : "text-gray-500 hover:text-gray-700"
+            }`}
+          >
+            モデル図
+          </button>
+        </div>
       </div>
 
       {/* タブ内容 */}
@@ -995,6 +1137,15 @@ function WorkspaceWithTabs({
             selectedSpriteId={selectedSpriteId}
             isActive={editorTab === "code"}
             debugView={debugView}
+          />
+        </div>
+
+        <div className={editorTab === "text" ? "h-full" : "hidden h-full"}>
+          <TextEditor
+            sprites={sprites}
+            blockDataMap={blockDataMap}
+            selectedSpriteId={selectedSpriteId}
+            onCodeChange={(code) => { onTextCodeChange?.(code) }}
           />
         </div>
 
@@ -1032,6 +1183,8 @@ function WorkspaceWithTabs({
               スプライトを選択してください
             </div>
           )}
+        </div>
+
         <div className={editorTab === "sounds" ? "h-full" : "hidden h-full"}>
           {selectedSprite ? (
             <SoundEditor
@@ -1045,6 +1198,16 @@ function WorkspaceWithTabs({
             </div>
           )}
         </div>
+
+        <div className={editorTab === "model-diagram" ? "h-full" : "hidden h-full"}>
+          {diagramMounted && (
+            <ModelDiagramWorkspace
+              sprites={sprites.map((s) => ({ id: s.id, name: s.name }))}
+              blockDataMap={blockDataMap}
+              pseudocode={pseudocode}
+              onNavigateToSprite={onNavigateToSprite}
+            />
+          )}
         </div>
       </div>
     </div>

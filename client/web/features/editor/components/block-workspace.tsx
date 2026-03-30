@@ -850,7 +850,13 @@ function Minimap({
       const canvas = ref.current
       const ws = workspace.current
       const items = containers.current
-      if (!canvas || !ws || !items || items.length === 0) {
+      if (!canvas || !ws || !items) {
+        rafId = requestAnimationFrame(draw)
+        return
+      }
+      if (items.length === 0) {
+        const ctx = canvas.getContext("2d")
+        if (ctx) ctx.clearRect(0, 0, MINIMAP_W, MINIMAP_H)
         rafId = requestAnimationFrame(draw)
         return
       }

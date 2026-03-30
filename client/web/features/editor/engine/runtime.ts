@@ -503,7 +503,9 @@ export class Runtime {
         s.opcode === "observer_whenvarchanges" ||
         s.opcode === "observer_wheneventreceived" ||
         s.opcode === "clone_whencloned" ||
-        s.opcode === "event_whentouched"
+        s.opcode === "event_whentouched" ||
+        s.opcode === "live_when" ||
+        s.opcode === "live_upon"
     )
   }
 
@@ -614,6 +616,7 @@ export class Runtime {
     const old = this.variables.get(name)
     this.variables.set(name, value)
     if (old !== value) {
+
       if (this.batchDepth > 0) {
         // バッチ中: 通知を遅延。最初の old 値を保持する
         if (!this.batchPending.has(name)) {
@@ -681,12 +684,7 @@ export class Runtime {
         const varName = String(s.hatArgs.VARIABLE ?? "")
         if (varName !== changedVar) continue
 
-        this.restartThread(s.hatBlockId, s.spriteId, s.script, ctx)
-
-        // live_upon: 一度発火したら自動で監視停止
-        if (s.opcode === "live_upon") {
-          this.disableWatcher(changedVar, s.spriteId)
-        }
+          this.restartThread(s.hatBlockId, s.spriteId, s.script, ctx)
       }
     }
 
