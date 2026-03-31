@@ -4,6 +4,7 @@ import type { BlockProjectData, SerializedBlockNode } from "../block-editor/type
 import { BUILTIN_BLOCK_DEFS } from "../block-editor/blocks"
 import type {
   ProgramAST,
+  SemanticProgramIR,
   SpriteAST,
   ScriptAST,
   HatNode,
@@ -180,6 +181,9 @@ const FUNC_TO_OPCODE: Record<string, string> = {
   load: "scene_load",
   // スプライト操作
   propertyOf: "sprite_getprop",
+  getVariableOf: "sprite_getvariable",
+  setVariableOf: "sprite_setvariableto",
+  changeVariableOf: "sprite_changevariableby",
   setLayer: "sprite_setlayer",
   addTag: "sprite_addtag",
   removeTag: "sprite_removetag",
@@ -331,9 +335,26 @@ class BlockGenerator {
   private idCounter = 0
   private prefix: string
   private customVariables = new Set<string>()
+  private loopVariableScopes: Map<string, string>[] = []
 
   constructor(prefix: string) {
     this.prefix = prefix
+  }
+
+  private pushLoopScope(varName: string, reporterOpcode: string): void {
+    this.loopVariableScopes.push(new Map([[varName, reporterOpcode]]))
+  }
+
+  private popLoopScope(): void {
+    this.loopVariableScopes.pop()
+  }
+
+  private getLoopVariableOpcode(name: string): string | undefined {
+    for (let i = this.loopVariableScopes.length - 1; i >= 0; i--) {
+      const opcode = this.loopVariableScopes[i].get(name)
+      if (opcode !== undefined) return opcode
+    }
+    return undefined
   }
 
   // ── メインエントリ ──
@@ -408,6 +429,8 @@ class BlockGenerator {
       case "break": return this.generateSimpleBlock("control_break")
       case "continue": return this.generateSimpleBlock("control_continue")
       case "return": return this.generateReturn(stmt)
+      case "crossAssign": return this.generateCrossAssign(stmt.sprite, stmt.variable, stmt.value)
+      case "crossChangeBy": return this.generateCrossChangeBy(stmt.sprite, stmt.variable, stmt.value)
     }
   }
 
@@ -484,6 +507,40 @@ class BlockGenerator {
     }
     const slotChildren: Record<string, string> = {}
     this.resolveExprToSlot(value, String(argIdxMap[1]), inputValues, slotChildren)
+
+    return this.addBlock(defId, inputValues, { slotChildren })
+  }
+
+  // ── 他スプライトの変数設定 ──
+
+  private generateCrossAssign(sprite: string, variable: string, value: ExprNode): string {
+    const opcode = "sprite_setvariableto"
+    const defId = opcodeToDefId.get(opcode)!
+    const argIdxMap = buildArgIndexMap(opcode)
+
+    const inputValues: Record<string, string> = {
+      [String(argIdxMap[0])]: variable,
+      [String(argIdxMap[1])]: sprite,
+    }
+    const slotChildren: Record<string, string> = {}
+    this.resolveExprToSlot(value, String(argIdxMap[2]), inputValues, slotChildren)
+
+    return this.addBlock(defId, inputValues, { slotChildren })
+  }
+
+  // ── 他スプライトの変数増減 ──
+
+  private generateCrossChangeBy(sprite: string, variable: string, value: ExprNode): string {
+    const opcode = "sprite_changevariableby"
+    const defId = opcodeToDefId.get(opcode)!
+    const argIdxMap = buildArgIndexMap(opcode)
+
+    const inputValues: Record<string, string> = {
+      [String(argIdxMap[0])]: variable,
+      [String(argIdxMap[1])]: sprite,
+    }
+    const slotChildren: Record<string, string> = {}
+    this.resolveExprToSlot(value, String(argIdxMap[2]), inputValues, slotChildren)
 
     return this.addBlock(defId, inputValues, { slotChildren })
   }
@@ -575,7 +632,9 @@ class BlockGenerator {
     this.resolveExprToSlot(stmt.from, String(argIdxMap[1]), inputValues, slotChildren)
     this.resolveExprToSlot(stmt.to, String(argIdxMap[2]), inputValues, slotChildren)
 
+    this.pushLoopScope(stmt.variable, "control_loop_variable")
     const bodyIds = this.generateStatementsAsList(stmt.body)
+    this.popLoopScope()
     return this.addBlock(defId, inputValues, { slotChildren, bodyChildren: [bodyIds] })
   }
 
@@ -591,7 +650,9 @@ class BlockGenerator {
       [String(argIdxMap[1])]: stmt.list,
     }
 
+    this.pushLoopScope(stmt.variable, "control_foreach_variable")
     const bodyIds = this.generateStatementsAsList(stmt.body)
+    this.popLoopScope()
     return this.addBlock(defId, inputValues, { bodyChildren: [bodyIds] })
   }
 
@@ -672,6 +733,14 @@ class BlockGenerator {
     if (reporterOpcode) {
       const defId = opcodeToDefId.get(reporterOpcode)!
       return this.addBlock(defId, {})
+    }
+
+    // ループ変数（for range → control_loop_variable, for each → control_foreach_variable）
+    const loopOpcode = this.getLoopVariableOpcode(name)
+    if (loopOpcode) {
+      const defId = opcodeToDefId.get(loopOpcode)!
+      const argIdxMap = buildArgIndexMap(loopOpcode)
+      return this.addBlock(defId, { [String(argIdxMap[0])]: name })
     }
 
     // カスタム変数
@@ -767,6 +836,16 @@ class BlockGenerator {
         return this.addBlock(defId, {})
       }
     }
+    // フォールバック: 他スプライトの変数アクセス
+    const opcode = "sprite_getvariable"
+    const defId = opcodeToDefId.get(opcode)
+    if (defId) {
+      const argIdxMap = buildArgIndexMap(opcode)
+      return this.addBlock(defId, {
+        [String(argIdxMap[0])]: property,
+        [String(argIdxMap[1])]: object,
+      })
+    }
     throw new Error(`Unknown property: ${object}.${property}`)
   }
 
@@ -859,4 +938,10 @@ export function generateBlockData(
   }
 
   return result
+}
+
+export function generateBlockDataFromIR(
+  program: SemanticProgramIR,
+): Record<string, BlockProjectData> {
+  return generateBlockData(program)
 }

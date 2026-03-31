@@ -32,9 +32,9 @@ class 宇宙船 {
       this.setAccelerationX(0)
     }
     if (this.isKeyPressed("up arrow")) {
-      this.setAccelerationY(-500)
-    } else if (this.isKeyPressed("down arrow")) {
       this.setAccelerationY(500)
+    } else if (this.isKeyPressed("down arrow")) {
+      this.setAccelerationY(-500)
     } else {
       this.setAccelerationY(0)
     }

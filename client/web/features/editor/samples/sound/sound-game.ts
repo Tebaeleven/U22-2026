@@ -21,6 +21,8 @@ export const soundGame: SampleProject = {
   ],
   pseudocode: `
 class 走者 {
+  var score = 0
+  var hp = 3
   onCreate() {
     this.setPhysics("dynamic")
     this.setCollideWorldBounds(true)

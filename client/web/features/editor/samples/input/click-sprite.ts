@@ -15,6 +15,7 @@ export const clickSprite: SampleProject = {
   ],
   pseudocode: `
 class 赤箱 {
+  var tinted = 0
   onCreate() {
     this.setPhysics("static")
     this.tinted = 0
@@ -38,6 +39,7 @@ class 赤箱 {
   }
 }
 class 青箱 {
+  var tinted = 0
   onCreate() {
     this.setPhysics("static")
     this.tinted = 0
@@ -60,6 +62,7 @@ class 青箱 {
   }
 }
 class 緑箱 {
+  var tinted = 0
   onCreate() {
     this.setPhysics("static")
     this.tinted = 0

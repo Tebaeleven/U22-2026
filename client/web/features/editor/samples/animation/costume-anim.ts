@@ -13,6 +13,7 @@ export const costumeAnim: SampleProject = {
   ],
   pseudocode: `
 class キャラ {
+  var frame = 0
   onCreate() {
     this.frame = 0
     this.createAnim("walk", 0, 3, 8, true)

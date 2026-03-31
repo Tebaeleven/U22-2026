@@ -14,6 +14,7 @@ export const justDown: SampleProject = {
   ],
   pseudocode: `
 class 砲台 {
+  var count = 0
   onCreate() {
     this.setPhysics("dynamic")
     this.setAllowGravity("off")
@@ -32,12 +33,16 @@ class 砲台 {
     if (this.isKeyJustDown("space")) {
       this.count += 1
       this.updateTextAt("cnt", join("SHOTS: ", this.count))
+      弾.spawnX = this.x
+      弾.spawnY = this.y + 20
       this.createClone("弾")
       this.emitParticles(this.x, this.y + 20, 5, "#ffcc00", 80)
     }
   }
 }
 class 弾 {
+  var spawnX = 0
+  var spawnY = 0
   onCreate() {
     this.hide()
   }
@@ -45,7 +50,8 @@ class 弾 {
     this.show()
     this.setPhysics("dynamic")
     this.setAllowGravity("off")
-    this.setVelocityY(-600)
+    this.setPosition(this.spawnX, this.spawnY)
+    this.setVelocityY(600)
     this.wait(2)
     this.deleteClone()
   }

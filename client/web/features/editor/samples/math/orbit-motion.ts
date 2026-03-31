@@ -25,6 +25,8 @@ class 惑星 {
   }
 }
 class 衛星 {
+  var orbitAngle = 0
+  var radius = 250
   onCreate() {
     this.setPhysics("dynamic")
     this.setAllowGravity("off")

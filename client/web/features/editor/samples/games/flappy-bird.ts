@@ -27,6 +27,9 @@ export const flappyBird: SampleProject = {
   ],
   pseudocode: `
 class 鳥 {
+  var score = 0
+  var gameOver = 0
+  var gap = 350
   onCreate() {
     this.setPhysics("dynamic")
     this.setGravity(800)
@@ -53,7 +56,7 @@ class 鳥 {
 
   onKeyPress("space") {
     if (this.gameOver == 0) {
-      this.setVelocityY(-400)
+      this.setVelocityY(400)
       this.emitParticles(this.x - 15, this.y, 4, "#ffdd00", 60)
     }
   }
@@ -84,6 +87,8 @@ class 鳥 {
 
   onEvent("spawn-pipe") {
     if (this.gameOver == 0) {
+      上パイプ.pipeY = randomInt(100, 400)
+      下パイプ.pipeY = 上パイプ.pipeY
       this.createClone("上パイプ")
       this.createClone("下パイプ")
     }
@@ -99,6 +104,7 @@ class 鳥 {
 }
 
 class 上パイプ {
+  var pipeY = 240
   onCreate() {
     this.hide()
   }
@@ -107,7 +113,6 @@ class 上パイプ {
     this.show()
     this.setPhysics("dynamic")
     this.setAllowGravity("off")
-    this.pipeY = randomInt(100, 400)
     this.setPosition(1000, this.pipeY + 475)
     this.setVelocityX(-200)
     this.wait(8)
@@ -116,6 +121,8 @@ class 上パイプ {
 }
 
 class 下パイプ {
+  var scored = 0
+  var pipeY = 240
   onCreate() {
     this.hide()
     this.scored = 0
@@ -125,7 +132,6 @@ class 下パイプ {
     this.show()
     this.setPhysics("dynamic")
     this.setAllowGravity("off")
-    this.pipeY = randomInt(100, 400)
     this.setPosition(1000, this.pipeY - 475 - 350)
     this.setVelocityX(-200)
     this.scored = 0

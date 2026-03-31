@@ -31,9 +31,11 @@ export function sensing_touchingobject(
   if (target === "mouse-pointer") {
     const mx = util.getMouseX()
     const my = util.getMouseY()
-    const halfW = 24 * (sprite.size / 100)
-    const halfH = 24 * (sprite.size / 100)
-    return Math.abs(sprite.x - mx) < halfW && Math.abs(sprite.y - my) < halfH
+    const costumeSize = sprite.costumeSizes[sprite.costumeIndex]
+    const baseW = costumeSize ? costumeSize[0] / 2 : 24
+    const baseH = costumeSize ? costumeSize[1] / 2 : 24
+    const scale = sprite.size / 100
+    return Math.abs(sprite.x - mx) < baseW * scale && Math.abs(sprite.y - my) < baseH * scale
   }
 
   // スプライト名で検索して Phaser の overlap 判定

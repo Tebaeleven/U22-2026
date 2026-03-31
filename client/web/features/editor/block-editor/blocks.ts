@@ -74,6 +74,8 @@ export {
   BUILTIN_BLOCK_DEFS,
   DEFAULT_BLOCK_PROJECT_DATA,
   SPRITE_DROPDOWN_OPCODES,
+  CROSS_SPRITE_VAR_OPCODES,
+  type BlockAssetOptions,
   getBlockDefs,
   getPaletteBlockDefs,
   getBlockDefById,

@@ -29,12 +29,16 @@ class 戦闘機 {
       this.setVelocityX(0)
     }
     if (this.isKeyJustDown("space")) {
+      弾.spawnX = this.x
+      弾.spawnY = this.y + 24
       this.createClone("弾")
     }
     this.emitParticles(this.x, this.y - 20, 1, "#3388ff", 15)
   }
 }
 class 弾 {
+  var spawnX = 0
+  var spawnY = 0
   onCreate() {
     this.hide()
   }
@@ -42,6 +46,7 @@ class 弾 {
     this.show()
     this.setPhysics("dynamic")
     this.setAllowGravity("off")
+    this.setPosition(this.spawnX, this.spawnY)
     this.setVelocityY(600)
     this.playSound("laser")
   }

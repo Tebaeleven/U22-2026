@@ -5,6 +5,7 @@ import { STAGE_WIDTH, STAGE_HEIGHT } from "../types"
 function syncPositionToPhysics(util: BlockUtil) {
   const sprite = util.getSprite()
   if (sprite.physicsMode === "dynamic" || sprite.physicsMode === "static") {
+    sprite.grounded = false
     const scene = util.getScene()
     scene?.setSpritePosition(sprite.id, sprite.x, sprite.y)
   }

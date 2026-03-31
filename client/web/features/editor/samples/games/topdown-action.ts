@@ -40,6 +40,13 @@ export const topdownActionGame: SampleProject = {
   ],
   pseudocode: `
 class 勇者 {
+  var hp = 100
+  var score = 0
+  var hasKey = 0
+  var gameOver = 0
+  var attackCooldown = 0
+  var invincible = 0
+  var attackDir = 1
   onCreate() {
     this.setPhysics("dynamic")
     this.setAllowGravity("off")
@@ -51,6 +58,7 @@ class 勇者 {
     this.gameOver = 0
     this.attackCooldown = 0
     this.invincible = 0
+    this.attackDir = 1
     this.addTextAt("hp", "HP: 100", -900, 490, 32, "#44dd44")
     this.addTextAt("score", "SCORE: 0", -900, 440, 24, "#ffffff")
     this.addTextAt("key", "", -500, 490, 28, "#ffcc00")
@@ -62,14 +70,16 @@ class 勇者 {
       if (this.isKeyPressed("left arrow")) {
         this.setVelocityX(-200)
         this.setFlipX(true)
+        this.attackDir = -1
       } else if (this.isKeyPressed("right arrow")) {
         this.setVelocityX(200)
         this.setFlipX(false)
+        this.attackDir = 1
       }
       if (this.isKeyPressed("up arrow")) {
-        this.setVelocityY(-200)
-      } else if (this.isKeyPressed("down arrow")) {
         this.setVelocityY(200)
+      } else if (this.isKeyPressed("down arrow")) {
+        this.setVelocityY(-200)
       }
       if (this.attackCooldown > 0) {
         this.attackCooldown += -1
@@ -95,10 +105,13 @@ class 勇者 {
 
   onKeyPress("space") {
     if (this.gameOver == 0 && this.attackCooldown == 0) {
+      剣.spawnX = this.x + this.attackDir * 40
+      剣.spawnY = this.y
+      剣.attackDir = this.attackDir
       this.createClone("剣")
       this.attackCooldown = 15
       this.emit("attack", "")
-      this.emitParticles(this.x + 40, this.y, 5, "#cccccc", 100)
+      this.emitParticles(this.x + this.attackDir * 40, this.y, 5, "#cccccc", 100)
     }
   }
 
@@ -187,6 +200,8 @@ class 勇者 {
 }
 
 class スライム1 {
+  var moveTimer = 0
+  var alive = 1
   onCreate() {
     this.setPhysics("dynamic")
     this.setAllowGravity("off")
@@ -220,6 +235,8 @@ class スライム1 {
 }
 
 class スライム2 {
+  var moveTimer = 0
+  var alive = 1
   onCreate() {
     this.setPhysics("dynamic")
     this.setAllowGravity("off")
@@ -253,6 +270,8 @@ class スライム2 {
 }
 
 class スライム3 {
+  var moveTimer = 0
+  var alive = 1
   onCreate() {
     this.setPhysics("dynamic")
     this.setAllowGravity("off")
@@ -288,6 +307,9 @@ class スライム3 {
 }
 
 class 剣 {
+  var spawnX = 0
+  var spawnY = 0
+  var attackDir = 1
   onCreate() {
     this.hide()
   }
@@ -295,7 +317,8 @@ class 剣 {
     this.show()
     this.setPhysics("dynamic")
     this.setAllowGravity("off")
-    this.setVelocityX(500)
+    this.setPosition(this.spawnX, this.spawnY)
+    this.setVelocityX(this.attackDir * 500)
     this.tweenAngle(720, 0.3)
     this.wait(0.3)
     this.deleteClone()

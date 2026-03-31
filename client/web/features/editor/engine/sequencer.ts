@@ -17,6 +17,8 @@ export interface SequencerCallbacks {
   getSpriteByName: (name: string) => SpriteRuntime | undefined
   getVariable: (name: string) => unknown
   setVariable: (name: string, value: unknown) => void
+  getSpriteVariable: (spriteName: string, varName: string) => unknown
+  setSpriteVariable: (spriteName: string, varName: string, value: unknown) => void
   sendEvent: (name: string, data: unknown) => void
   disableWatcher: (varName: string, spriteId: string) => void
   isKeyPressed: (key: string) => boolean
@@ -129,6 +131,8 @@ export class Sequencer {
         getVariable: (name: string) => this.callbacks.getVariable(name),
         getLoopVariable: (name: string) => thread.getLoopVariable(name),
         setVariable: (name: string, value: unknown) => this.callbacks.setVariable(name, value),
+        getSpriteVariable: (spriteName: string, varName: string) => this.callbacks.getSpriteVariable(spriteName, varName),
+        setSpriteVariable: (spriteName: string, varName: string, value: unknown) => this.callbacks.setSpriteVariable(spriteName, varName, value),
         sendEvent: (name: string, data: unknown) => this.callbacks.sendEvent(name, data),
         disableWatcher: (varName: string) => this.callbacks.disableWatcher(varName, thread.spriteId),
         isKeyPressed: (key: string) => this.callbacks.isKeyPressed(key),
@@ -261,6 +265,8 @@ export class Sequencer {
       getVariable: (name: string) => this.callbacks.getVariable(name),
       getLoopVariable: () => undefined,
       setVariable: (name: string, value: unknown) => this.callbacks.setVariable(name, value),
+      getSpriteVariable: (spriteName: string, varName: string) => this.callbacks.getSpriteVariable(spriteName, varName),
+      setSpriteVariable: (spriteName: string, varName: string, value: unknown) => this.callbacks.setSpriteVariable(spriteName, varName, value),
       sendEvent: () => {},
       disableWatcher: () => {},
       isKeyPressed: (key: string) => this.callbacks.isKeyPressed(key),

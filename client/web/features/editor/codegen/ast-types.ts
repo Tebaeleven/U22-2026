@@ -2,17 +2,20 @@
 
 /** プログラム全体 = スプライトの配列 */
 export type ProgramAST = SpriteAST[]
+export type SemanticProgramIR = ProgramAST
 
 export type SpriteAST = {
   name: string
   scripts: ScriptAST[]
   variables?: string[]
 }
+export type SemanticSpriteIR = SpriteAST
 
 export type ScriptAST = {
   hat: HatNode
   body: StatementNode[]
 }
+export type SemanticScriptIR = ScriptAST
 
 // ── ハットブロック ──
 
@@ -46,6 +49,8 @@ export type StatementNode =
   | { type: "break" }
   | { type: "continue" }
   | { type: "return"; value: ExprNode }
+  | { type: "crossAssign"; sprite: string; variable: string; value: ExprNode }
+  | { type: "crossChangeBy"; sprite: string; variable: string; value: ExprNode }
 
 // ── 式（レポーター/値） ──
 

@@ -1,7 +1,7 @@
 // サンプル共通ヘルパー
 
 import type { SpriteDef, Costume, SoundDef } from "../constants"
-import { DEFAULT_COLLIDER, createRectCostume } from "../constants"
+import { DEFAULT_COLLIDER, createRectCostume, createEmojiCostume } from "../constants"
 import type { BlockProjectData } from "../block-editor/types"
 import { codeToBlockData } from "../codegen"
 
@@ -11,6 +11,11 @@ export function createUrlCostume(
   name: string, url: string, width: number, height: number,
 ): Costume {
   return { id: `url-costume-${++_urlCostumeSeq}`, name, dataUrl: url, width, height }
+}
+
+/** 絵文字コスチュームの配列を一括生成 */
+export function emojiCostumes(emojis: string[]): Costume[] {
+  return emojis.map((emoji, i) => createEmojiCostume(`emoji${i}`, emoji))
 }
 
 let _soundSeq = 0

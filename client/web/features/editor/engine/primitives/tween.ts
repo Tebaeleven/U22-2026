@@ -11,10 +11,11 @@ export function tween_scale(args: BlockArgs, util: BlockUtil) {
   if (!frame.tweenStarted) {
     frame.tweenStarted = true
     if (scene) {
-      scene.tweenSpriteScale(sprite.id, scale, secs * 1000).then(() => {
+      scene.tweenSpriteScale(sprite.id, scale, secs * 1000, sprite).then(() => {
         frame.tweenDone = true
       })
     } else {
+      sprite.size = Math.max(1, scale * 100)
       frame.tweenDone = true
     }
   }
@@ -112,10 +113,11 @@ export function tween_scale_ease(args: BlockArgs, util: BlockUtil) {
   if (!frame.tweenStarted) {
     frame.tweenStarted = true
     if (scene) {
-      scene.tweenSpriteScale(sprite.id, scale, secs * 1000).then(() => {
+      scene.tweenSpriteScale(sprite.id, scale, secs * 1000, sprite).then(() => {
         frame.tweenDone = true
       })
     } else {
+      sprite.size = Math.max(1, scale * 100)
       frame.tweenDone = true
     }
   }

@@ -13,6 +13,9 @@ export function physics_setmode(args: BlockArgs, util: BlockUtil) {
   if (mode !== "dynamic" && mode !== "static" && mode !== "none") return
   const sprite = util.getSprite()
   sprite.physicsMode = mode
+  if (mode !== "dynamic") {
+    sprite.grounded = false
+  }
   const scene = util.getScene()
   if (scene) scene.setSpritePhysicsMode(sprite.id, mode)
 }
@@ -55,9 +58,7 @@ export function physics_velocityY(_args: BlockArgs, util: BlockUtil): number {
 
 /** 接地しているか判定 */
 export function physics_onground(_args: BlockArgs, util: BlockUtil): boolean {
-  const scene = util.getScene()
-  if (!scene) return false
-  return scene.isOnGround(util.getSprite().id)
+  return util.getSprite().grounded
 }
 
 /** バウンス（反発係数）を設定 */
@@ -83,6 +84,7 @@ export function physics_setcollideworldbounds(args: BlockArgs, util: BlockUtil) 
 export function physics_disablebody(_args: BlockArgs, util: BlockUtil) {
   const sprite = util.getSprite()
   sprite.bodyEnabled = false
+  sprite.grounded = false
   sprite.visible = false
   const scene = util.getScene()
   if (scene) scene.setSpriteBodyEnabled(sprite.id, false)

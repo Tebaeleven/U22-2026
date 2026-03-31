@@ -192,6 +192,8 @@ Literal     = NUMBER | STRING
 | `costumeNumber` | `looks_costumenumber` | reporter |
 | 変数名（上記以外） | `data_variable` | reporter |
 
+> **注意**: `for (i in FROM..TO)` のイテレータ変数 `i` は `data_variable` ではなく `control_loop_variable` を使用する。同様に `for (item in LIST)` のイテレータ変数は `control_foreach_variable` を使用する。これらはループ本体内でのみ有効（スコープが限定される）。
+
 ## 4. ブロック配置 JSON 生成仕様
 
 ### 4-1. 出力形式

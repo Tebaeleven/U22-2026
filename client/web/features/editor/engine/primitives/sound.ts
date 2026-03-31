@@ -58,29 +58,47 @@ function stopTone(name: string) {
   }
 }
 
+function resolveVolumePercent(args: BlockArgs) {
+  return Math.max(0, Math.min(100, Number(args.VOL ?? 50))) / 100
+}
+
 /** 効果音を再生 */
-export function sound_play(args: BlockArgs, _util: BlockUtil) {
+export function sound_play(args: BlockArgs, util: BlockUtil) {
   const name = String(args.SOUND ?? "beep")
+  const sprite = util.getSprite()
+  const scene = util.getScene()
+  if (scene?.playSpriteSound(sprite.id, name, { loop: false })) {
+    return
+  }
   playTone(name, false)
 }
 
 /** BGMをループ再生 */
-export function sound_playloop(args: BlockArgs, _util: BlockUtil) {
+export function sound_playloop(args: BlockArgs, util: BlockUtil) {
   const name = String(args.SOUND ?? "beep")
+  const sprite = util.getSprite()
+  const scene = util.getScene()
+  if (scene?.playSpriteSound(sprite.id, name, { loop: true })) {
+    return
+  }
   playTone(name, true)
 }
 
 /** サウンドを停止 */
-export function sound_stop(args: BlockArgs, _util: BlockUtil) {
+export function sound_stop(args: BlockArgs, util: BlockUtil) {
   const name = String(args.SOUND ?? "beep")
+  const sprite = util.getSprite()
+  util.getScene()?.stopSpriteSound(sprite.id, name)
   stopTone(name)
 }
 
 /** 音量を設定 (0-100) */
-export function sound_setvolume(args: BlockArgs, _util: BlockUtil) {
+export function sound_setvolume(args: BlockArgs, util: BlockUtil) {
   const name = String(args.SOUND ?? "beep")
-  const vol = Math.max(0, Math.min(100, Number(args.VOL ?? 50))) / 100
+  const vol = resolveVolumePercent(args)
   volumes.set(name, vol)
   const entry = activeOscillators.get(name)
   if (entry) entry.gain.gain.value = vol
+  const sprite = util.getSprite()
+  util.getScene()?.setSpriteSoundVolume(sprite.id, name, vol)
 }

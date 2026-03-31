@@ -14,6 +14,9 @@ export const mathFunctionsDemo: SampleProject = {
   ],
   pseudocode: `
 class プレイヤー {
+  var val = 3.7
+  var dx = mouseX - x
+  var dy = mouseY - y
   onCreate() {
     this.setPhysics("dynamic")
     this.setAllowGravity("off")

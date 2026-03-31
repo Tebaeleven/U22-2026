@@ -14,6 +14,7 @@ export const clickToMove: SampleProject = {
   ],
   pseudocode: `
 class キャラ {
+  var moving = 0
   onCreate() {
     this.setPhysics("dynamic")
     this.setAllowGravity("off")

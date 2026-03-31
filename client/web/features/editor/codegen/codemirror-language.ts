@@ -4,6 +4,11 @@ import { StreamLanguage, type StreamParser } from "@codemirror/language"
 import { autocompletion, type CompletionContext, type CompletionResult } from "@codemirror/autocomplete"
 import { linter, type Diagnostic } from "@codemirror/lint"
 import { codeToBlockData } from "./index"
+import {
+  BUILTIN_METHODS,
+  BUILTIN_PROPERTIES,
+  GLOBAL_FUNCTIONS as VALIDATOR_GLOBAL_FUNCTIONS,
+} from "./class-validator"
 
 // ── キーワード・関数名・プロパティ名 ──
 
@@ -13,47 +18,11 @@ const KEYWORDS = new Set([
   "var", "let", "live", "when", "upon", "batch",
 ])
 
-const METHODS = [
-  "move", "turnRight", "turnLeft", "goto", "setPosition", "glide", "tweenTo",
-  "setX", "setY", "changeXBy", "changeYBy", "ifOnEdgeBounce", "setAngle",
-  "setVelocityX", "setVelocityY", "setVelocity", "setPhysics", "setGravity",
-  "setBounce", "setCollideWorldBounds", "setAllowGravity", "disableBody", "enableBody",
-  "onCollide", "setAcceleration", "setDrag", "setDamping", "setMaxVelocity",
-  "setAngularVelocity", "setImmovable", "setMass", "setPushable",
-  "worldWrap", "moveTo", "accelerateTo", "velocityFromAngle",
-  "show", "hide", "say", "think", "setSize", "setCostume", "nextCostume",
-  "setTint", "clearTint", "setAlpha", "setFlipX",
-  "addText", "setText", "removeText", "floatingText",
-  "addTextAt", "updateTextAt", "removeTextAt",
-  "tweenScale", "tweenAlpha", "tweenAngle",
-  "emitParticles", "createClone", "deleteClone",
-  "emit", "unwatch", "touching", "isKeyPressed", "isKeyJustDown", "isOnGround",
-  "enableDrag", "createAnim", "playAnim",
-  "wait", "waitUntil", "stop", "restart",
-  "setInterval", "clearInterval", "setTimeout",
-  "cameraFollow", "cameraStopFollow", "cameraShake", "cameraZoom", "cameraFade",
-  "setOrigin", "setScrollFactor", "setLayer",
-  "addTag", "removeTag", "hasTag",
-  "setState", "stateIs",
-  "showVariable", "hideVariable",
-]
+const METHODS = [...BUILTIN_METHODS]
 
-const PROPERTIES = [
-  "x", "y", "angle", "velocityX", "velocityY",
-  "mouseX", "mouseY", "timer", "mouseDown", "mouseWheel",
-  "costumeNumber", "newValue", "oldValue", "eventData",
-  "state", "currentScene", "layer", "collisionTarget",
-]
+const PROPERTIES = [...BUILTIN_PROPERTIES]
 
-const GLOBAL_FUNCTIONS = [
-  "join", "floor", "ceil", "round", "abs", "sqrt", "pow",
-  "sin", "cos", "tan", "atan2", "sign",
-  "min", "max", "lerp", "clamp", "remap",
-  "random", "randomInt",
-  "letterOf", "contains", "substring", "split", "replace",
-  "toNumber", "toText",
-  "propertyOf", "distanceTo", "angleTo",
-]
+const GLOBAL_FUNCTIONS = [...VALIDATOR_GLOBAL_FUNCTIONS]
 
 const METHOD_SET = new Set(METHODS)
 const GLOBAL_SET = new Set(GLOBAL_FUNCTIONS)

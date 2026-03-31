@@ -67,7 +67,7 @@ export function CostumeEditor({
             <Plus className="size-3.5" />
           </Button>
         </div>
-        <ScrollArea className="flex-1">
+        <ScrollArea className="flex-1 overflow-hidden">
           <div className="flex flex-col gap-1 p-1.5">
             {sprite.costumes.map((costume, idx) => (
               <CostumeThumbnail
@@ -94,7 +94,7 @@ export function CostumeEditor({
               variant={onionSkin ? "default" : "ghost"}
               size="icon-xs"
               onClick={() => setOnionSkin((v) => !v)}
-              className="absolute top-1.5 right-1.5 z-20 h-6 w-6"
+              className="absolute top-[78px] right-1.5 z-20 h-6 w-6"
               title="オニオンスキン"
             >
               <Layers className="size-3.5" />

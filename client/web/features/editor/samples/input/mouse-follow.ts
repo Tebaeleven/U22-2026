@@ -25,15 +25,20 @@ class 追従体 {
     this.moveTo(this.mouseX, this.mouseY, 400)
     this.updateTextAt("pos", join("X: ", join(round(this.x), join("  Y: ", round(this.y)))))
     this.emitParticles(this.x, this.y, 1, "#ff6633", 40)
+    軌跡.spawnX = this.x
+    軌跡.spawnY = this.y
     this.createClone("軌跡")
   }
 }
 class 軌跡 {
+  var spawnX = 0
+  var spawnY = 0
   onCreate() {
     this.hide()
   }
   onClone() {
     this.show()
+    this.setPosition(this.spawnX, this.spawnY)
     this.tweenAlpha(0, 0.5)
     this.wait(0.5)
     this.deleteClone()

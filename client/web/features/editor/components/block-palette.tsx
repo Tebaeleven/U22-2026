@@ -18,6 +18,7 @@ import { BLOCK_CATEGORIES, type BlockCategoryId } from "@/features/editor/consta
 import { useAppSelector } from "@/lib/store"
 import {
   DEFAULT_VARIABLES,
+  type BlockAssetOptions,
   getPaletteBlockDefs,
   isCBlockShape,
   isInlineReporterVariableInput,
@@ -357,10 +358,19 @@ export function BlockPalette({
     controller.getSnapshot
   )
   const spriteNames = useAppSelector((s) => s.sprites.list.map((sp) => sp.name))
+  const selectedSpriteAssets = useAppSelector((s): BlockAssetOptions | undefined => {
+    const selectedSprite = s.sprites.list.find((sprite) => sprite.id === s.sprites.selectedId)
+    if (!selectedSprite) return undefined
+    return {
+      costumes: selectedSprite.costumes.map((costume) => costume.name),
+      sounds: selectedSprite.sounds?.map((sound) => sound.name) ?? [],
+    }
+  })
   const filteredBlocks = getPaletteBlockDefs(
     selectedCategory,
     snapshot.customProcedures,
-    spriteNames
+    spriteNames,
+    selectedSpriteAssets
   )
 
   const [paletteContextMenu, setPaletteContextMenu] = useState<PaletteContextMenuState>(null)

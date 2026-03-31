@@ -36,6 +36,14 @@ export const mathChallengeGame: SampleProject = {
   ],
   pseudocode: `
 class 問題管理 {
+  var score = 0
+  var level = 1
+  var num1 = 0
+  var num2 = 0
+  var answer = 0
+  var correct = 0
+  var gameOver = 0
+  var timeLeft = 100
   onCreate() {
     this.hide()
     this.score = 0
@@ -112,6 +120,10 @@ class 問題管理 {
 }
 
 class 選択肢A {
+  var myValue = 0
+  var answer = 0
+  var active = 1
+  var mySlot = 1
   onCreate() {
     this.myValue = 0
     this.answer = 0
@@ -121,7 +133,7 @@ class 選択肢A {
 
   onEvent("set-choices") {
     this.answer = eventData
-    if (this.correct == this.mySlot) {
+    if (問題管理.correct == this.mySlot) {
       this.myValue = this.answer
     } else {
       this.myValue = this.answer + randomInt(1, 5)
@@ -150,6 +162,10 @@ class 選択肢A {
 }
 
 class 選択肢B {
+  var myValue = 0
+  var answer = 0
+  var active = 1
+  var mySlot = 2
   onCreate() {
     this.myValue = 0
     this.answer = 0
@@ -159,7 +175,7 @@ class 選択肢B {
 
   onEvent("set-choices") {
     this.answer = eventData
-    if (this.correct == this.mySlot) {
+    if (問題管理.correct == this.mySlot) {
       this.myValue = this.answer
     } else {
       this.myValue = this.answer + randomInt(-5, -1)
@@ -188,6 +204,10 @@ class 選択肢B {
 }
 
 class 選択肢C {
+  var myValue = 0
+  var answer = 0
+  var active = 1
+  var mySlot = 3
   onCreate() {
     this.myValue = 0
     this.answer = 0
@@ -197,7 +217,7 @@ class 選択肢C {
 
   onEvent("set-choices") {
     this.answer = eventData
-    if (this.correct == this.mySlot) {
+    if (問題管理.correct == this.mySlot) {
       this.myValue = this.answer
     } else {
       this.myValue = this.answer + randomInt(2, 8)
@@ -226,6 +246,10 @@ class 選択肢C {
 }
 
 class 選択肢D {
+  var myValue = 0
+  var answer = 0
+  var active = 1
+  var mySlot = 4
   onCreate() {
     this.myValue = 0
     this.answer = 0
@@ -235,7 +259,7 @@ class 選択肢D {
 
   onEvent("set-choices") {
     this.answer = eventData
-    if (this.correct == this.mySlot) {
+    if (問題管理.correct == this.mySlot) {
       this.myValue = this.answer
     } else {
       this.myValue = this.answer + randomInt(-8, -2)

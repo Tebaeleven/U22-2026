@@ -14,6 +14,9 @@ export const forEachDemo: SampleProject = {
   ],
   pseudocode: `
 class プレイヤー {
+  var items = 0
+  var inventory = ""
+  var score = 0
   onCreate() {
     this.setPhysics("dynamic")
     this.setAllowGravity("off")

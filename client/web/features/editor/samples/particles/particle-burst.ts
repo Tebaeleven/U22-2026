@@ -13,6 +13,7 @@ export const particleBurst: SampleProject = {
   ],
   pseudocode: `
 class 発射台 {
+  var colorIdx = 0
   onCreate() {
     this.setPhysics("dynamic")
     this.setAllowGravity("off")

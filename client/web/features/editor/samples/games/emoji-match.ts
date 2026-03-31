@@ -3,20 +3,17 @@
 // Phaser公式 Emoji Match を参考に再現
 
 import type { SampleProject } from "../_helpers"
-import { sp } from "../_helpers"
+import { sp, emojiCostumes } from "../_helpers"
 import type { SpriteDef } from "../../constants"
-import { DEFAULT_COLLIDER, createRectCostume } from "../../constants"
+import { DEFAULT_COLLIDER } from "../../constants"
 
-// 15色のタイルコスチューム（各色が異なる「絵文字」を表現）
-const TILE_COLORS = [
-  "#FF6B6B", "#4ECDC4", "#45B7D1", "#96CEB4", "#FFEAA7",
-  "#DDA0DD", "#F0B27A", "#F7DC6F", "#BB8FCE", "#85C1E9",
-  "#82E0AA", "#F1948A", "#AED6F1", "#D7BDE2", "#E59866",
+// 15種の絵文字コスチューム
+const TILE_EMOJIS = [
+  "🍎", "🍊", "🍋", "🍇", "🍓",
+  "🌸", "🔥", "⭐", "💎", "🎵",
+  "🌈", "❤️", "🐱", "🐶", "🦋",
 ]
-
-const tileCostumes = TILE_COLORS.map((color, i) =>
-  createRectCostume(`tile${i}`, 100, 100, color, { borderRadius: 14, borderColor: "#ffffff", borderWidth: 3 }),
-)
+const tileCostumes = emojiCostumes(TILE_EMOJIS)
 
 const tileSprite: SpriteDef = {
   id: "s-tile",
@@ -46,6 +43,29 @@ export const emojiMatchGame: SampleProject = {
   ],
   pseudocode: `
 class タイル {
+  var score = 0
+  var gameState = 1
+  var clickLock = 0
+  var selectCount = 0
+  var sel1X = -9999
+  var sel1Y = -9999
+  var sel1C = -1
+  var mp1X = -9999
+  var mp1Y = -9999
+  var mp2X = -9999
+  var mp2Y = -9999
+  var matchC = randomInt(0, 14)
+  var matchPos1 = randomInt(0, 15)
+  var matchPos2 = randomInt(0, 14)
+  var pool = 0
+  var cellIdx = 0
+  var assignC = matchC
+  var remaining = 30 - timer
+  var secs = floor(remaining)
+  var ms = floor(remaining - secs * 100)
+  var secStr = join("0", secs)
+  var msStr = join("0", ms)
+  var didDeselect = 0
   onCreate() {
     this.hide()
     // ゲーム状態
@@ -95,7 +115,7 @@ class タイル {
         }
         // 親の位置とコスチュームを先にセット（クローンに継承される）
         this.setPosition(-210 + col * 140, 150 - row * 140)
-        this.setCostume(join("costume", this.assignC))
+        this.setCostume(join("emoji", this.assignC))
         this.createClone("myself")
         this.cellIdx += 1
       }
@@ -109,6 +129,7 @@ class タイル {
   }
 
   onClone() {
+    this.clearTint()
     this.show()
     // 位置・コスチュームは親から継承済み
     this.setSize(10)
@@ -207,6 +228,7 @@ class タイル {
   }
 
   onEvent("regenerate") {
+    this.clearTint()
     // クローン: フェードアウトして削除
     this.tweenAlpha(0, 0.3)
     this.wait(0.4)
@@ -236,7 +258,7 @@ class タイル {
           this.pool += 1
         }
         this.setPosition(-210 + col * 140, 150 - row * 140)
-        this.setCostume(join("costume", this.assignC))
+        this.setCostume(join("emoji", this.assignC))
         this.createClone("myself")
         this.cellIdx += 1
       }

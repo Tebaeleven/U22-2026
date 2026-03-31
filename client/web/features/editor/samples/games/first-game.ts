@@ -40,6 +40,10 @@ export const firstGame: SampleProject = {
   ],
   pseudocode: `
 class プレイヤー {
+  var score = 0
+  var starCount = 0
+  var gameOver = 0
+  var spawnI = 0
   onCreate() {
     this.setPhysics("dynamic")
     this.setGravity(800)
@@ -57,7 +61,8 @@ class プレイヤー {
   onUpdate() {
     if (this.gameOver == 0) {
       if (this.spawnI < 12) {
-        this.setPosition(-660 + this.spawnI * 120, 300)
+        スター.spawnX = -660 + this.spawnI * 120
+        スター.spawnY = 300
         this.createClone("スター")
         this.spawnI += 1
         if (this.spawnI == 12) {
@@ -77,7 +82,7 @@ class プレイヤー {
 
   onKeyPress("up arrow") {
     if (this.gameOver == 0 && this.isOnGround()) {
-      this.setVelocityY(-500)
+      this.setVelocityY(500)
       this.emitParticles(this.x, this.y - 30, 6, "#aaaaff", 80)
     }
   }
@@ -141,6 +146,8 @@ class 浮島3 {
 }
 
 class スター {
+  var spawnX = 0
+  var spawnY = 300
   onCreate() {
     this.hide()
   }
@@ -151,6 +158,7 @@ class スター {
     this.setAllowGravity("on")
     this.setBounce(0.5)
     this.setCollideWorldBounds(true)
+    this.setPosition(this.spawnX, this.spawnY)
     this.tweenAngle(360, 2)
   }
 

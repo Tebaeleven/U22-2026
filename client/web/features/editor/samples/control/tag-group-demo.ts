@@ -46,6 +46,8 @@ class プレイヤー {
 }
 
 class 敵1 {
+  var speed = 80
+  var ang = angleTo("プレイヤー")
   onCreate() {
     this.setPhysics("dynamic")
     this.setAllowGravity("off")
@@ -70,6 +72,8 @@ class 敵1 {
 }
 
 class 敵2 {
+  var speed = 100
+  var ang = angleTo("プレイヤー")
   onCreate() {
     this.setPhysics("dynamic")
     this.setAllowGravity("off")
@@ -94,6 +98,8 @@ class 敵2 {
 }
 
 class 敵3 {
+  var speed = 60
+  var ang = angleTo("プレイヤー")
   onCreate() {
     this.setPhysics("dynamic")
     this.setAllowGravity("off")

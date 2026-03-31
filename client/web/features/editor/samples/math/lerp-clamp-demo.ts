@@ -15,6 +15,9 @@ export const lerpClampDemo: SampleProject = {
   ],
   pseudocode: `
 class プレイヤー {
+  var hp = 100
+  var tx = propertyOf("ターゲット", "x")
+  var ty = propertyOf("ターゲット", "y")
   onCreate() {
     this.setPhysics("dynamic")
     this.setAllowGravity("off")

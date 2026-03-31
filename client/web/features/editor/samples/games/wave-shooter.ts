@@ -47,6 +47,14 @@ export const waveShooterGame: SampleProject = {
   ],
   pseudocode: `
 class プレイヤー {
+  var hp = 3
+  var score = 0
+  var wave = 1
+  var fireRate = 12
+  var fireTick = 0
+  var invincible = 0
+  var powerLevel = 0
+  var gameOver = 0
   onCreate() {
     this.setPhysics("dynamic")
     this.setAllowGravity("off")
@@ -184,6 +192,10 @@ class 自弾 {
 }
 
 class 敵 {
+  var killed = 0
+  var spawnTotal = 0
+  var waveNum = 1
+  var active = 1
   onCreate() {
     this.hide()
     this.killed = 0

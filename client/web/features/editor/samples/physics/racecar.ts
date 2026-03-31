@@ -14,6 +14,7 @@ export const racecar: SampleProject = {
   ],
   pseudocode: `
 class 車 {
+  var throttle = 0
   onCreate() {
     this.setPhysics("dynamic")
     this.setAllowGravity(false)

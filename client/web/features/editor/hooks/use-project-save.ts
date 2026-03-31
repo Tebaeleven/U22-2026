@@ -98,7 +98,8 @@ export function useProjectSave({
 
       // project.json を Storage に保存
       const projectData: ProjectData = {
-        version: 1,
+        version: 2,
+        languageVersion: 2,
         sprites,
         blocks: getBlockProjectData(),
       }

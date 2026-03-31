@@ -437,8 +437,32 @@ class ClassParser {
 
       if (next.type === "punctuation" && next.value === ".") {
         this.advance()
-        const method = this.expect("identifier").value
-        const fullName = `${name}.${method}`
+        const prop = this.expect("identifier").value
+        const afterProp = this.peek()
+
+        // name.prop = expr（他スプライトの変数設定）
+        if (afterProp.type === "operator" && afterProp.value === "=") {
+          this.advance()
+          const value = this.parseExpression()
+          return { type: "crossAssign", sprite: name, variable: prop, value }
+        }
+
+        // name.prop += expr（他スプライトの変数増減）
+        if (afterProp.type === "operator" && afterProp.value === "+=") {
+          this.advance()
+          const value = this.parseExpression()
+          return { type: "crossChangeBy", sprite: name, variable: prop, value }
+        }
+
+        // name.prop -= *= /= %= expr を式展開に変換
+        if (afterProp.type === "operator" && (afterProp.value === "-=" || afterProp.value === "*=" || afterProp.value === "/=" || afterProp.value === "%=")) {
+          const op = this.advance().value[0]
+          const value = this.parseExpression()
+          return { type: "crossAssign", sprite: name, variable: prop, value: { type: "binary", op, left: { type: "property", object: name, property: prop }, right: value } }
+        }
+
+        // name.method(args)
+        const fullName = `${name}.${prop}`
         if (this.peek().value === "(") {
           const args = this.parseArgList()
           return { type: "call", name: fullName, args }

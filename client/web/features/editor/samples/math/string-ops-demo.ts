@@ -14,6 +14,8 @@ export const stringOpsDemo: SampleProject = {
   ],
   pseudocode: `
 class プレイヤー {
+  var result = substring("Hello World", 1, 5)
+  var num = toNumber("42") + 8
   onCreate() {
     this.addTextAt("t1", "SPACE: contains", -900, 490, 22, "#ffffff")
     this.addTextAt("t2", "UP: substring", -900, 450, 22, "#ffffff")

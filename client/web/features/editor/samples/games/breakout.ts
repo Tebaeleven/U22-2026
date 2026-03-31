@@ -27,6 +27,8 @@ export const breakoutGame: SampleProject = {
   ],
   pseudocode: `
 class パドル {
+  var score = 0
+  var lives = 3
   onCreate() {
     this.setPhysics("dynamic")
     this.setImmovable(true)
@@ -64,6 +66,7 @@ class パドル {
 }
 
 class ボール {
+  var launched = 0
   onCreate() {
     this.setPhysics("dynamic")
     this.setAllowGravity("off")
@@ -96,11 +99,11 @@ class ボール {
 
   onTouched("ブリック") {
     this.emitParticles(this.x, this.y, 8, "#ffcc00", 100)
-    this.emit("brick-hit", "")
   }
 }
 
 class ブリック {
+  var broken = 0
   onCreate() {
     this.hide()
     for (row in 0 .. 3) {
@@ -113,17 +116,20 @@ class ブリック {
 
   onClone() {
     this.show()
+    this.broken = 0
     this.setPhysics("static")
     this.tweenScale(1.2, 0.2)
   }
 
-  onEvent("brick-hit") {
-    if (this.touching("ボール")) {
-      this.emitParticles(this.x, this.y, 12, "#ffffff", 180)
-      this.tweenScale(0, 0.15)
-      this.disableBody()
-      this.emit("brick-destroyed", "")
+  onTouched("ボール") {
+    if (this.broken == 1) {
+      return
     }
+    this.broken = 1
+    this.emitParticles(this.x, this.y, 12, "#ffffff", 180)
+    this.tweenScale(0, 0.15)
+    this.disableBody()
+    this.emit("brick-destroyed", "")
   }
 }
 

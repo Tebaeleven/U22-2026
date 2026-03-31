@@ -15,6 +15,7 @@ export const intervalSpawner: SampleProject = {
   ],
   pseudocode: `
 class スポナー {
+  var count = 0
   onCreate() {
     this.count = 0
     this.setInterval("spawn", 500)
@@ -27,6 +28,8 @@ class スポナー {
   }
 }
 class ボール {
+  var spawnX = 0
+  var spawnY = 400
   onCreate() {
     this.hide()
   }

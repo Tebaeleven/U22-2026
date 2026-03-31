@@ -54,6 +54,9 @@ class 右パドル {
   }
 }
 class ボール {
+  var p1Score = 0
+  var p2Score = 0
+  var launched = 0
   onCreate() {
     this.setPhysics("dynamic")
     this.setAllowGravity("off")

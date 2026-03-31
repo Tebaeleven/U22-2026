@@ -16,6 +16,8 @@ export const saveLoadDemo: SampleProject = {
   ],
   pseudocode: `
 class プレイヤー {
+  var score = 0
+  var highscore = toNumber(load("highscore"))
   onCreate() {
     this.setPhysics("dynamic")
     this.setGravity(800)
@@ -28,7 +30,8 @@ class プレイヤー {
 
     // コインを配置
     for (i in 1 .. 8) {
-      this.setPosition(randomInt(-700, 700), 300)
+      コイン.spawnX = randomInt(-700, 700)
+      コイン.spawnY = 300
       this.createClone("コイン")
     }
     this.setPosition(0, -200)
@@ -63,6 +66,8 @@ class プレイヤー {
 }
 
 class コイン {
+  var spawnX = 0
+  var spawnY = 300
   onCreate() {
     this.hide()
   }
@@ -71,6 +76,7 @@ class コイン {
     this.setPhysics("dynamic")
     this.setBounce(0.5)
     this.setCollideWorldBounds(true)
+    this.setPosition(this.spawnX, this.spawnY)
     this.tweenAngle(360, 2)
   }
   onTouched("プレイヤー") {

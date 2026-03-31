@@ -14,6 +14,7 @@ export const multiAnim: SampleProject = {
   ],
   pseudocode: `
 class キャラ {
+  var currentAnim = "idle"
   onCreate() {
     this.setPhysics("dynamic")
     this.setGravity(600)

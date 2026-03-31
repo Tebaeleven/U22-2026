@@ -29,6 +29,12 @@ export const topdownRpg: SampleProject = {
   ],
   pseudocode: `
 class 勇者 {
+  var hp = 100
+  var score = 0
+  var gameOver = 0
+  var attackCooldown = 0
+  var invincible = 0
+  var facingRight = 1
   onCreate() {
     this.setPhysics("dynamic")
     this.setAllowGravity("off")
@@ -56,9 +62,9 @@ class 勇者 {
         this.setFlipX(false)
       }
       if (this.isKeyPressed("w")) {
-        this.setVelocityY(-220)
-      } else if (this.isKeyPressed("s")) {
         this.setVelocityY(220)
+      } else if (this.isKeyPressed("s")) {
+        this.setVelocityY(-220)
       }
       if (this.attackCooldown > 0) {
         this.attackCooldown += -1
@@ -83,6 +89,9 @@ class 勇者 {
   }
   onKeyPress("space") {
     if (this.gameOver == 0 && this.attackCooldown == 0) {
+      剣.spawnX = this.x
+      剣.spawnY = this.y
+      剣.facingRight = this.facingRight
       this.createClone("剣")
       this.attackCooldown = 20
       this.emit("attack", "")
@@ -138,6 +147,9 @@ class 勇者 {
   }
 }
 class 剣 {
+  var spawnX = 0
+  var spawnY = 0
+  var facingRight = 1
   onCreate() {
     this.hide()
   }
@@ -145,6 +157,7 @@ class 剣 {
     this.show()
     this.setPhysics("dynamic")
     this.setAllowGravity("off")
+    this.setPosition(this.spawnX, this.spawnY)
     if (this.facingRight == 1) {
       this.setVelocityX(500)
     } else {
@@ -156,6 +169,8 @@ class 剣 {
   }
 }
 class スライム1 {
+  var alive = 1
+  var speed = 70
   onCreate() {
     this.setPhysics("dynamic")
     this.setAllowGravity("off")
@@ -181,6 +196,8 @@ class スライム1 {
   }
 }
 class スライム2 {
+  var alive = 1
+  var speed = 90
   onCreate() {
     this.setPhysics("dynamic")
     this.setAllowGravity("off")
@@ -206,6 +223,8 @@ class スライム2 {
   }
 }
 class スライム3 {
+  var alive = 1
+  var speed = 110
   onCreate() {
     this.setPhysics("dynamic")
     this.setAllowGravity("off")

@@ -59,7 +59,25 @@ export function looks_changesizeby(args: BlockArgs, util: BlockUtil) {
 export function looks_switchcostumeto(args: BlockArgs, util: BlockUtil) {
   const sprite = util.getSprite()
   const costume = String(args.COSTUME ?? "costume1")
-  // "costume1" → 0, "costume2" → 1, ...
+
+  // 1. 名前で完全一致検索
+  const nameIdx = sprite.costumeNames.indexOf(costume)
+  if (nameIdx >= 0) {
+    sprite.costumeIndex = nameIdx
+    return
+  }
+
+  // 2. 数値なら直接インデックスとして使用（0-indexed）
+  const asNum = Number(costume)
+  if (!Number.isNaN(asNum) && Number.isInteger(asNum)) {
+    const idx = Math.round(asNum)
+    if (idx >= 0 && idx < sprite.costumeCount) {
+      sprite.costumeIndex = idx
+      return
+    }
+  }
+
+  // 3. "costume1" 形式（1-indexed）のフォールバック
   const match = costume.match(/(\d+)$/)
   if (match) {
     const idx = parseInt(match[1], 10) - 1
@@ -184,14 +202,20 @@ export function looks_print(args: BlockArgs, _util: BlockUtil) {
 export function looks_setorigin(args: BlockArgs, util: BlockUtil) {
   const x = Number(args.X ?? 0.5)
   const y = Number(args.Y ?? 0.5)
+  const sprite = util.getSprite()
+  sprite.originX = x
+  sprite.originY = y
   const scene = util.getScene()
-  if (scene) scene.setSpriteOrigin(util.getSprite().id, x, y)
+  if (scene) scene.setSpriteOrigin(sprite.id, x, y)
 }
 
 /** スクロールファクターを設定 (Phaser setScrollFactor 相当) */
 export function looks_setscrollfactor(args: BlockArgs, util: BlockUtil) {
   const x = Number(args.X ?? 1)
   const y = Number(args.Y ?? 1)
+  const sprite = util.getSprite()
+  sprite.scrollFactorX = x
+  sprite.scrollFactorY = y
   const scene = util.getScene()
-  if (scene) scene.setSpriteScrollFactor(util.getSprite().id, x, y)
+  if (scene) scene.setSpriteScrollFactor(sprite.id, x, y)
 }

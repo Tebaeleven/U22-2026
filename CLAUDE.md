@@ -158,6 +158,13 @@ client/web/features/editor/
 - `.vpl-canvas` 内に配置するコンポーネント（ツールバー、パネル等）で lucide-react 等の SVG アイコンを使う場合、このルールの影響を受けないように `> svg`（子セレクタ）が維持されていることを確認すること
 - `.vpl-canvas svg`（子孫セレクタ）に変更すると全 SVG アイコンが画面全体に引き伸ばされるバグが再発する
 
+### コード生成（codegen）に関する注意
+
+- `for (i in FROM..TO)` の body 内で変数 `i` を参照する場合、`data_variable` ではなく **`control_loop_variable`** レポーターを生成すること
+- `for (item in LIST)` の body 内で変数 `item` を参照する場合、`data_variable` ではなく **`control_foreach_variable`** レポーターを生成すること
+- `BlockGenerator` クラスの `loopVariableScopes` スタックでスコープを管理している
+- 疑似コードの文法仕様は @docs/codegen-requirements.md を参照
+
 ### headless-vpl に関する制約
 
 - **headless-vpl（`libs/headless-vpl/`）のコードは絶対に変更しないこと**

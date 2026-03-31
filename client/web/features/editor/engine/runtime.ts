@@ -56,10 +56,12 @@ export class Runtime {
   // --- クローン管理 ---
   private cloneCounter = 0
   private spriteDefs: SpriteDef[] = []
-  // --- 衝突コールバック（spriteId → [{targetName, eventName}]） ---
+  // --- 接触イベント購読（spriteId → [{targetName, eventName}]） ---
   private collisionCallbacks: Map<string, Array<{ targetName: string; eventName: string }>> = new Map()
-  // --- event_whentouched の接触状態追跡 ---
-  private touchingState: Map<string, Set<string>> = new Map()
+  // --- contact state ---
+  private previousContactPairs = new Set<string>()
+  private currentContactMap: Map<string, Set<string>> = new Map()
+  private beganContactMap: Map<string, Set<string>> = new Map()
   // --- タイマー管理 ---
   private intervals: Map<string, { eventName: string; ms: number; elapsed: number }> = new Map()
   private timeouts: Map<string, { eventName: string; ms: number; elapsed: number }> = new Map()
@@ -100,6 +102,8 @@ export class Runtime {
       getSpriteByName: (name) => this.getSpriteByName(name),
       getVariable: (name) => this.getVariable(name),
       setVariable: (name, value) => this.setVariable(name, value),
+      getSpriteVariable: (spriteName, varName) => this.getVariable(`${spriteName}::${varName}`),
+      setSpriteVariable: (spriteName, varName, value) => this.setVariable(`${spriteName}::${varName}`, value),
       sendEvent: (name, data) => this.emitEvent(name, data),
       disableWatcher: (varName, spriteId) => this.disableWatcher(varName, spriteId),
       isKeyPressed: (key) => this.isKeyPressed(key),
@@ -151,6 +155,9 @@ export class Runtime {
     this.totalPausedDuration = 0
     this.pausedAt = 0
     this.collisionCallbacks.clear()
+    this.previousContactPairs.clear()
+    this.currentContactMap.clear()
+    this.beganContactMap.clear()
 
     // 全スプライトのプロシージャをマージ
     this.procedures = {}
@@ -174,9 +181,12 @@ export class Runtime {
         sayTimer: null,
         costumeIndex: def.currentCostumeIndex,
         costumeCount: def.costumes.length,
+        costumeNames: def.costumes.map(c => c.name),
+        costumeSizes: def.costumes.map(c => [c.width, c.height]),
         physicsMode: "none",
         velocityX: 0,
         velocityY: 0,
+        grounded: false,
         bodyEnabled: true,
         bounce: 0,
         collideWorldBounds: false,
@@ -185,6 +195,11 @@ export class Runtime {
         tint: null,
         flipX: false,
         angle: 0,
+        originX: 0.5,
+        originY: 0.5,
+        scrollFactorX: 1,
+        scrollFactorY: 1,
+        scaleTweening: false,
         accelerationX: 0,
         accelerationY: 0,
         dragX: 0,
@@ -276,10 +291,16 @@ export class Runtime {
     this.variables.clear()
     this.disabledWatchers.clear()
     this.notifyingVariable = null
+    this.liveVariables = []
+    this.intervals.clear()
+    this.timeouts.clear()
+    this.lastTickTime = 0
     this.cloneCounter = 0
     this.spriteDefs = []
     this.collisionCallbacks.clear()
-    this.touchingState.clear()
+    this.previousContactPairs.clear()
+    this.currentContactMap.clear()
+    this.beganContactMap.clear()
     this.restartRequested = false
     this.spriteArrayCache = null
     this.spriteNameIndex.clear()
@@ -332,12 +353,14 @@ export class Runtime {
           sprite.y = p.y
           sprite.velocityX = p.vx
           sprite.velocityY = p.vy
+          sprite.grounded = p.grounded
         }
       }
     }
 
     this.threads = this.sequencer.stepThreads(this.threads)
 
+    this.refreshContacts()
     this.checkCollisionCallbacks()
     this.checkTouchEvents()
 
@@ -528,6 +551,7 @@ export class Runtime {
           sprite.y = p.y
           sprite.velocityX = p.vx
           sprite.velocityY = p.vy
+          sprite.grounded = p.grounded
         }
       }
     }
@@ -541,6 +565,7 @@ export class Runtime {
     }
 
     // 衝突コールバックのチェック
+    this.refreshContacts()
     this.checkCollisionCallbacks()
 
     // event_whentouched の衝突チェック
@@ -728,20 +753,19 @@ export class Runtime {
     const sourceSprite = this.sprites.get(sourceId)
     if (!sourceSprite) return
 
-    // 呼び出し元スプライト（別スプライトのクローンの場合、呼び出し元の位置を使う）
-    const caller = this.sprites.get(requestingSpriteId)
-
     this.cloneCounter += 1
     const cloneId = `${sourceId}__clone_${this.cloneCounter}`
 
-    // スプライトの状態をコピー（呼び出し元の位置に出現）
+    // クローンは複製元スプライト自身の状態を継承する。
+    // 別スプライト対象の createClone は、事前に対象フィールドへ spawn 情報を
+    // 明示的に書き込んでから onClone で反映する。
     const cloneSprite: SpriteRuntime = {
       ...sourceSprite,
       id: cloneId,
       parentId: sourceSprite.parentId ?? sourceId,
-      x: caller?.x ?? sourceSprite.x,
-      y: caller?.y ?? sourceSprite.y,
-      visible: true,
+      x: sourceSprite.x,
+      y: sourceSprite.y,
+      grounded: false,
       sayText: "",
       sayTextX: 0,
       sayTextY: 0,
@@ -808,32 +832,97 @@ export class Runtime {
       this.collisionCallbacks.set(spriteId, [])
     }
     this.collisionCallbacks.get(spriteId)!.push({ targetName, eventName })
-
-    // Phaser 側にもコールバック登録
-    const sprite = this.sprites.get(spriteId)
-    if (!sprite) return
-    const target = this.getSpriteByName(targetName)
-    if (!target || !this.scene) return
-
-    this.scene.registerCollisionCallback(spriteId, target.id, () => {
-      this.emitEvent(eventName, { self: sprite.name, other: targetName })
-    })
   }
 
-  /** tick 内で衝突コールバックのチェック（ポーリング型フォールバック） */
-  private checkCollisionCallbacks() {
-    if (!this.scene) return
+  private refreshContacts() {
+    if (!this.scene) {
+      this.previousContactPairs.clear()
+      this.currentContactMap.clear()
+      this.beganContactMap.clear()
+      return
+    }
 
+    const nextPairs = new Set<string>()
+    const nextContactMap = new Map<string, Set<string>>()
+    const beganContactMap = new Map<string, Set<string>>()
+
+    for (const { idA, idB } of this.scene.readContactPairs()) {
+      const key = this.getContactPairKey(idA, idB)
+      nextPairs.add(key)
+      this.addDirectedContact(nextContactMap, idA, idB)
+      this.addDirectedContact(nextContactMap, idB, idA)
+
+      if (!this.previousContactPairs.has(key)) {
+        this.addDirectedContact(beganContactMap, idA, idB)
+        this.addDirectedContact(beganContactMap, idB, idA)
+      }
+    }
+
+    this.previousContactPairs = nextPairs
+    this.currentContactMap = nextContactMap
+    this.beganContactMap = beganContactMap
+  }
+
+  private addDirectedContact(map: Map<string, Set<string>>, fromId: string, toId: string) {
+    const targets = map.get(fromId)
+    if (targets) {
+      targets.add(toId)
+      return
+    }
+    map.set(fromId, new Set([toId]))
+  }
+
+  private getContactPairKey(idA: string, idB: string) {
+    return [idA, idB].sort().join("::")
+  }
+
+  private getMatchingContacts(
+    spriteId: string,
+    targetName: string,
+    contacts: Map<string, Set<string>>,
+  ): SpriteRuntime[] {
+    const targetIds = contacts.get(spriteId)
+    if (!targetIds?.size) return []
+
+    const matches: SpriteRuntime[] = []
+    for (const targetId of targetIds) {
+      const target = this.sprites.get(targetId)
+      if (!target || !target.bodyEnabled) continue
+      if (targetName !== "any" && target.name !== targetName) continue
+      matches.push(target)
+    }
+    return matches
+  }
+
+  private emitCollisionEvent(name: string, collisionTarget: string, data: unknown) {
+    for (const s of this.scripts) {
+      if (s.opcode !== "observer_wheneventreceived") continue
+
+      const eventName = String(s.hatArgs.EVENT_NAME ?? "")
+      if (eventName !== name) continue
+
+      this.restartThread(s.hatBlockId, s.spriteId, s.script, {
+        eventData: data,
+        collisionTarget,
+      })
+    }
+
+    this.ensureTickRunning()
+  }
+
+  /** tick 内で衝突コールバックのチェック（begin のみ） */
+  private checkCollisionCallbacks() {
     for (const [spriteId, callbacks] of this.collisionCallbacks) {
       const sprite = this.sprites.get(spriteId)
       if (!sprite) continue
 
       for (const { targetName, eventName } of callbacks) {
-        const target = this.getSpriteByName(targetName)
-        if (!target) continue
-
-        if (this.scene.checkOverlap(spriteId, target.id)) {
-          this.emitEvent(eventName, { self: sprite.name, other: targetName })
+        const targets = this.getMatchingContacts(spriteId, targetName, this.beganContactMap)
+        for (const target of targets) {
+          this.emitCollisionEvent(eventName, target.name, {
+            self: sprite.name,
+            other: target.name,
+          })
         }
       }
     }
@@ -897,10 +986,6 @@ export class Runtime {
 
   /** event_whentouched ハットの衝突チェック */
   private checkTouchEvents() {
-    if (!this.scene) return
-
-    const allSprites = this.getSpriteArray()
-
     for (const s of this.scripts) {
       if (s.opcode !== "event_whentouched") continue
 
@@ -908,31 +993,12 @@ export class Runtime {
       const sprite = this.sprites.get(s.spriteId)
       if (!sprite || !sprite.bodyEnabled) continue
 
-      const targets = targetName === "any"
-        ? allSprites.filter((t) => t.id !== s.spriteId)
-        : (this.spriteNameIndex.get(targetName) ?? [])
-
-      const stateKey = `${s.spriteId}:${s.hatBlockId}`
-      if (!this.touchingState.has(stateKey)) {
-        this.touchingState.set(stateKey, new Set())
-      }
-      const prevTouching = this.touchingState.get(stateKey)!
-      const currentTouching = new Set<string>()
-
+      const targets = this.getMatchingContacts(s.spriteId, targetName, this.beganContactMap)
       for (const target of targets) {
-        if (!target.bodyEnabled) continue
-        if (this.scene.checkOverlap(s.spriteId, target.id)) {
-          currentTouching.add(target.id)
-          // 新規接触の場合のみスレッド生成（デバウンス）
-          if (!prevTouching.has(target.id)) {
-            this.restartThread(s.hatBlockId, s.spriteId, s.script, {
-              collisionTarget: target.name,
-            })
-          }
-        }
+        this.restartThread(s.hatBlockId, s.spriteId, s.script, {
+          collisionTarget: target.name,
+        })
       }
-
-      this.touchingState.set(stateKey, currentTouching)
     }
     // ensureTickRunning は不要（tick 内から呼ばれるため）
   }

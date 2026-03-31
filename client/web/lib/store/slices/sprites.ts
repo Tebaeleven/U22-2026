@@ -10,7 +10,7 @@ import {
 } from "@/features/editor/constants"
 import type { BlockProjectData } from "@/features/editor/block-editor/types"
 import { applySpriteRenameToBlockProjectData } from "@/features/editor/block-editor/block-data-sprite-rename"
-import { SAMPLE_PROJECTS, resolveSample } from "@/features/editor/samples"
+import { SAMPLE_PROJECTS, resolveSample } from "@/features/editor/samples/index"
 
 // ─── デフォルトのサンプルプロジェクトからデータ生成 ──────────
 

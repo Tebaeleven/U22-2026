@@ -18,6 +18,28 @@ export function sprite_getprop(args: BlockArgs, util: BlockUtil): unknown {
   }
 }
 
+/** 他スプライトの変数を取得 */
+export function sprite_getvariable(args: BlockArgs, util: BlockUtil): unknown {
+  const spriteName = String(args.SPRITE ?? "")
+  const varName = String(args.VARIABLE ?? "")
+  return util.getSpriteVariable(spriteName, varName)
+}
+
+/** 他スプライトの変数に値を設定 */
+export function sprite_setvariableto(args: BlockArgs, util: BlockUtil) {
+  const spriteName = String(args.SPRITE ?? "")
+  const varName = String(args.VARIABLE ?? "")
+  util.setSpriteVariable(spriteName, varName, args.VALUE)
+}
+
+/** 他スプライトの変数の値を増減 */
+export function sprite_changevariableby(args: BlockArgs, util: BlockUtil) {
+  const spriteName = String(args.SPRITE ?? "")
+  const varName = String(args.VARIABLE ?? "")
+  const current = Number(util.getSpriteVariable(spriteName, varName)) || 0
+  util.setSpriteVariable(spriteName, varName, current + Number(args.VALUE))
+}
+
 /** レイヤーを設定 */
 export function sprite_setlayer(args: BlockArgs, util: BlockUtil) {
   util.getSprite().layer = Number(args.LAYER ?? 0)

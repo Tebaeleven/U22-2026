@@ -109,6 +109,10 @@ function reporterToInline(block: ScriptBlock): string {
       return `sin(${r("DEG")})`
     case "math_cos":
       return `cos(${r("DEG")})`
+    case "sprite_getprop":
+      return `${r("SPRITE")}.${r("PROP")}`
+    case "sprite_getvariable":
+      return `${r("SPRITE")}.${r("VARIABLE")}`
     default: {
       const args = Object.values(block.args).map((v) => String(v ?? ""))
       return `this.${block.opcode}(${args.join(", ")})`
@@ -331,6 +335,10 @@ function blockToLines(block: ScriptBlock, indent: number): string[] {
       return [`${pad}var live ${r("VARIABLE")} = ${r("VALUE")}`]
     case "data_changevariableby":
       return [`${pad}this.${r("VARIABLE")} += ${r("VALUE")}`]
+    case "sprite_setvariableto":
+      return [`${pad}${r("SPRITE")}.${r("VARIABLE")} = ${r("VALUE")}`]
+    case "sprite_changevariableby":
+      return [`${pad}${r("SPRITE")}.${r("VARIABLE")} += ${r("VALUE")}`]
     case "data_showvariable":
       return [`${pad}this.showVariable(${r("VARIABLE")})`]
     case "data_hidevariable":

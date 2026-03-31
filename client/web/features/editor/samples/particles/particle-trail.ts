@@ -13,6 +13,7 @@ export const particleTrail: SampleProject = {
   ],
   pseudocode: `
 class ランナー {
+  var colorIdx = 0
   onCreate() {
     this.setPhysics("dynamic")
     this.setAllowGravity("off")

@@ -60,6 +60,12 @@ export const wallBreakerGame: SampleProject = {
   ],
   pseudocode: `
 class プレイヤー {
+  var hp = 3
+  var coins = 0
+  var facing = 1
+  var attackCool = 0
+  var invincible = 0
+  var gameOver = 0
   onCreate() {
     this.setPhysics("dynamic")
     this.setGravity(900)
@@ -107,7 +113,7 @@ class プレイヤー {
 
   onKeyPress("up arrow") {
     if (this.gameOver == 0 && this.isOnGround()) {
-      this.setVelocityY(-550)
+      this.setVelocityY(550)
       this.playSound("jump")
       this.emitParticles(this.x, this.y - 30, 6, "#aaaaaa", 60)
     }
@@ -158,7 +164,7 @@ class ハンマー {
   }
 
   onEvent("attack") {
-    this.setPosition(this.x + this.facing * 50, this.y)
+    this.setPosition(プレイヤー.x + プレイヤー.facing * 50, プレイヤー.y)
     this.createClone("myself")
   }
 
@@ -219,6 +225,7 @@ class ブリック {
 }
 
 class コウモリ {
+  var batSpeed = 120
   onCreate() {
     this.hide()
     this.batSpeed = 120
@@ -290,6 +297,7 @@ class 地面 {
 }
 
 class 足場 {
+  var platIdx = 0
   onCreate() {
     this.hide()
     this.platIdx = 0

@@ -17,6 +17,7 @@ export const cameraShakeHit: SampleProject = {
   ],
   pseudocode: `
 class プレイヤー {
+  var score = 0
   onCreate() {
     this.setPhysics("dynamic")
     this.setAllowGravity("off")
@@ -64,6 +65,7 @@ class プレイヤー {
   }
 }
 class 敵1 {
+  var alive = 1
   onCreate() {
     this.setPhysics("dynamic")
     this.setAllowGravity("off")
@@ -83,6 +85,7 @@ class 敵1 {
   }
 }
 class 敵2 {
+  var alive = 1
   onCreate() {
     this.setPhysics("dynamic")
     this.setAllowGravity("off")
@@ -102,6 +105,7 @@ class 敵2 {
   }
 }
 class 敵3 {
+  var alive = 1
   onCreate() {
     this.setPhysics("dynamic")
     this.setAllowGravity("off")

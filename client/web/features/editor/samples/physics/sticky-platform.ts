@@ -39,6 +39,7 @@ class プレイヤー {
   }
 }
 class 足場1 {
+  var dir = 1
   onCreate() {
     this.setPhysics("dynamic")
     this.setImmovable("on")
@@ -58,6 +59,7 @@ class 足場1 {
   }
 }
 class 足場2 {
+  var dir = 1
   onCreate() {
     this.setPhysics("dynamic")
     this.setImmovable("on")

@@ -30,6 +30,9 @@ export const endlessRunnerGame: SampleProject = {
   ],
   pseudocode: `
 class ランナー {
+  var score = 0
+  var jumps = 0
+  var gameOver = 0
   onCreate() {
     this.setPhysics("dynamic")
     this.setGravity(1200)
@@ -55,7 +58,7 @@ class ランナー {
 
   onKeyPress("up arrow") {
     if (this.gameOver == 0 && this.jumps < 2) {
-      this.setVelocityY(-650)
+      this.setVelocityY(650)
       this.jumps += 1
       this.emitParticles(this.x, this.y - 40, 8, "#88ccff", 80)
       if (this.jumps == 2) {
@@ -67,7 +70,7 @@ class ランナー {
 
   onKeyPress("space") {
     if (this.gameOver == 0 && this.jumps < 2) {
-      this.setVelocityY(-650)
+      this.setVelocityY(650)
       this.jumps += 1
       this.emitParticles(this.x, this.y - 40, 8, "#88ccff", 80)
     }

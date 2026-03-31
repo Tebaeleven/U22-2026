@@ -27,6 +27,8 @@ class ターゲット2 {
   }
 }
 class アイテム1 {
+  var placed = 0
+  var dist = distanceTo("ターゲット1")
   onCreate() {
     this.enableDrag()
     this.setPhysics("dynamic")
@@ -51,6 +53,8 @@ class アイテム1 {
   }
 }
 class アイテム2 {
+  var placed = 0
+  var dist = distanceTo("ターゲット2")
   onCreate() {
     this.enableDrag()
     this.setPhysics("dynamic")

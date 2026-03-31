@@ -389,6 +389,11 @@ function createBuiltinBlockDefs() {
     { category: "camera", name: "Save", opcode: "scene_save", shape: "stack", color: "#3D9970", inputs: [{ type: "text", default: "highscore" }, { type: "label", text: "value" }, { type: "text", default: "0" }] },
     { category: "camera", name: "Load", opcode: "scene_load", shape: "reporter", color: "#3D9970", inputs: [{ type: "text", default: "highscore" }] },
 
+    // ─── 他スプライトの変数アクセス ───
+    { category: "variables", name: "Variable of", opcode: "sprite_getvariable", shape: "reporter", color: "#FF8C1A", inputs: [{ type: "dropdown", default: "my variable", options: [] }, { type: "label", text: "of" }, { type: "dropdown", default: "Sprite1", options: ["Sprite1"] }] },
+    { category: "variables", name: "Set variable of", opcode: "sprite_setvariableto", shape: "stack", color: "#FF8C1A", inputs: [{ type: "dropdown", default: "my variable", options: [] }, { type: "label", text: "of" }, { type: "dropdown", default: "Sprite1", options: ["Sprite1"] }, { type: "label", text: "to" }, { type: "number", default: 0 }] },
+    { category: "variables", name: "Change variable of", opcode: "sprite_changevariableby", shape: "stack", color: "#FF8C1A", inputs: [{ type: "dropdown", default: "my variable", options: [] }, { type: "label", text: "of" }, { type: "dropdown", default: "Sprite1", options: ["Sprite1"] }, { type: "label", text: "by" }, { type: "number", default: 1 }] },
+
     // ─── モダン言語拡張: スプライト操作 ───
     { category: "sensing", name: "Property of", opcode: "sprite_getprop", shape: "reporter", color: "#5CB1D6", inputs: [{ type: "dropdown", default: "プレイヤー", options: ["プレイヤー"] }, { type: "label", text: "." }, { type: "dropdown", default: "x", options: ["x", "y", "direction", "size", "state", "costume #", "layer"] }] },
     { category: "sensing", name: "Set layer to", opcode: "sprite_setlayer", shape: "stack", color: "#5CB1D6", inputs: [{ type: "number", default: 0 }] },
@@ -440,6 +445,16 @@ export const SPRITE_DROPDOWN_OPCODES: Record<string, { prefixOptions: string[]; 
   physics_moveto: { prefixOptions: [], inputIndex: 0 },
   physics_accelerateto: { prefixOptions: [], inputIndex: 0 },
   sprite_getprop: { prefixOptions: [], inputIndex: 0 },
+  sprite_getvariable: { prefixOptions: [], inputIndex: 2 },
+  sprite_setvariableto: { prefixOptions: [], inputIndex: 2 },
+  sprite_changevariableby: { prefixOptions: [], inputIndex: 2 },
+}
+
+/** クロススプライト変数ブロック: 変数ドロップダウンのインデックスとスプライトドロップダウンのインデックス */
+export const CROSS_SPRITE_VAR_OPCODES: Record<string, { variableInputIndex: number; spriteInputIndex: number }> = {
+  sprite_getvariable: { variableInputIndex: 0, spriteInputIndex: 2 },
+  sprite_setvariableto: { variableInputIndex: 0, spriteInputIndex: 2 },
+  sprite_changevariableby: { variableInputIndex: 0, spriteInputIndex: 2 },
 }
 
 function injectSpriteNames(defs: BlockDef[], spriteNames: string[]): BlockDef[] {
@@ -458,26 +473,61 @@ function injectSpriteNames(defs: BlockDef[], spriteNames: string[]): BlockDef[] 
   })
 }
 
+export type BlockAssetOptions = {
+  costumes?: string[]
+  sounds?: string[]
+}
+
+const ASSET_DROPDOWN_OPCODES: Record<string, { inputIndex: number; assetKey: keyof BlockAssetOptions }> = {
+  looks_switchcostumeto: { inputIndex: 0, assetKey: "costumes" },
+  sound_play: { inputIndex: 0, assetKey: "sounds" },
+  sound_playloop: { inputIndex: 0, assetKey: "sounds" },
+  sound_stop: { inputIndex: 0, assetKey: "sounds" },
+  sound_setvolume: { inputIndex: 0, assetKey: "sounds" },
+}
+
+function injectAssetOptions(defs: BlockDef[], assetOptions?: BlockAssetOptions): BlockDef[] {
+  if (!assetOptions) return defs
+  return defs.map((def) => {
+    if (!def.opcode) return def
+    const config = ASSET_DROPDOWN_OPCODES[def.opcode]
+    if (!config) return def
+    const input = def.inputs[config.inputIndex]
+    if (input?.type !== "dropdown") return def
+    const extra = assetOptions[config.assetKey] ?? []
+    if (extra.length === 0) return def
+    const newInputs = [...def.inputs]
+    newInputs[config.inputIndex] = {
+      ...input,
+      options: [...extra, ...input.options.filter((option) => !extra.includes(option))],
+    }
+    return { ...def, inputs: newInputs }
+  })
+}
+
 /** ビルトイン＋カスタム手続きの全ブロック定義を取得する */
 export function getBlockDefs(
   customProcedures: CustomProcedure[],
-  spriteNames?: string[]
+  spriteNames?: string[],
+  assetOptions?: BlockAssetOptions,
 ): BlockDef[] {
   const normalized = customProcedures.map(normalizeProcedure)
   const defs = [
     ...BUILTIN_BLOCK_DEFS,
     ...normalized.flatMap((procedure) => buildProcedureBlockDefs(procedure)),
   ]
-  return spriteNames ? injectSpriteNames(defs, spriteNames) : defs
+  const withSprites = spriteNames ? injectSpriteNames(defs, spriteNames) : defs
+  return injectAssetOptions(withSprites, assetOptions)
 }
 
 /** パレット表示用のブロック定義をカテゴリでフィルタして取得する */
 export function getPaletteBlockDefs(
   category: BlockDef["category"],
   customProcedures: CustomProcedure[],
-  spriteNames?: string[]
+  spriteNames?: string[],
+  assetOptions?: BlockAssetOptions,
 ): BlockDef[] {
-  return getBlockDefs(customProcedures, spriteNames).filter((def) => {
+  return getBlockDefs(customProcedures, spriteNames, assetOptions).filter((def) => {
     if (def.category !== category) return false
     if (def.paletteHidden) return false
     if (def.source.kind === "custom-define") return false
@@ -490,9 +540,10 @@ export function getPaletteBlockDefs(
 export function getBlockDefById(
   defId: string,
   customProcedures: CustomProcedure[],
-  spriteNames?: string[]
+  spriteNames?: string[],
+  assetOptions?: BlockAssetOptions,
 ): BlockDef | undefined {
-  return getBlockDefs(customProcedures, spriteNames).find((def) => def.id === defId)
+  return getBlockDefs(customProcedures, spriteNames, assetOptions).find((def) => def.id === defId)
 }
 
 /** ビルトインブロック定義を名前と形状で検索してIDを返す */

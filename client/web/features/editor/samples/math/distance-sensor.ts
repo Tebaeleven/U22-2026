@@ -18,6 +18,12 @@ export const distanceSensor: SampleProject = {
   ],
   pseudocode: `
 class プレイヤー {
+  var dA = distanceTo("敵A")
+  var dB = distanceTo("敵B")
+  var dC = distanceTo("敵C")
+  var dD = distanceTo("敵D")
+  var nearest = min(min(dA, dB), min(dC, dD))
+  var farthest = max(max(dA, dB), max(dC, dD))
   onCreate() {
     this.setPhysics("dynamic")
     this.setAllowGravity("off")
@@ -33,9 +39,9 @@ class プレイヤー {
       this.setVelocityX(300)
     }
     if (this.isKeyPressed("up arrow")) {
-      this.setVelocityY(-300)
-    } else if (this.isKeyPressed("down arrow")) {
       this.setVelocityY(300)
+    } else if (this.isKeyPressed("down arrow")) {
+      this.setVelocityY(-300)
     }
     this.dA = this.distanceTo("敵A")
     this.dB = this.distanceTo("敵B")
@@ -54,10 +60,10 @@ class 敵A {
   }
   onEvent("check-dist") {
     this.clearTint()
-    if (this.dA == this.nearest) {
+    if (プレイヤー.dA == プレイヤー.nearest) {
       this.setTint("#ff3333")
     }
-    if (this.dA == this.farthest) {
+    if (プレイヤー.dA == プレイヤー.farthest) {
       this.setTint("#3333ff")
     }
   }
@@ -69,10 +75,10 @@ class 敵B {
   }
   onEvent("check-dist") {
     this.clearTint()
-    if (this.dB == this.nearest) {
+    if (プレイヤー.dB == プレイヤー.nearest) {
       this.setTint("#ff3333")
     }
-    if (this.dB == this.farthest) {
+    if (プレイヤー.dB == プレイヤー.farthest) {
       this.setTint("#3333ff")
     }
   }
@@ -84,10 +90,10 @@ class 敵C {
   }
   onEvent("check-dist") {
     this.clearTint()
-    if (this.dC == this.nearest) {
+    if (プレイヤー.dC == プレイヤー.nearest) {
       this.setTint("#ff3333")
     }
-    if (this.dC == this.farthest) {
+    if (プレイヤー.dC == プレイヤー.farthest) {
       this.setTint("#3333ff")
     }
   }
@@ -99,10 +105,10 @@ class 敵D {
   }
   onEvent("check-dist") {
     this.clearTint()
-    if (this.dD == this.nearest) {
+    if (プレイヤー.dD == プレイヤー.nearest) {
       this.setTint("#ff3333")
     }
-    if (this.dD == this.farthest) {
+    if (プレイヤー.dD == プレイヤー.farthest) {
       this.setTint("#3333ff")
     }
   }

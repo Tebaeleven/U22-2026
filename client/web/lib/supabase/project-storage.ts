@@ -15,6 +15,7 @@ export function getStorageUrl(path: string, bucket: string = BUCKET): string {
 /** プロジェクトデータの JSON 構造 */
 export interface ProjectData {
   version: number
+  languageVersion: number
   sprites: SpriteDef[]
   /** スプライトごとのブロックデータ（spriteId → BlockProjectData） */
   blocks: Record<string, BlockProjectData>
@@ -23,7 +24,8 @@ export interface ProjectData {
 /** project.json のデフォルト値 */
 export function createDefaultProjectData(): ProjectData {
   return {
-    version: 1,
+    version: 2,
+    languageVersion: 2,
     sprites: [],
     blocks: {},
   }
@@ -76,6 +78,7 @@ export async function loadProjectData(
 
   return {
     version: parsed.version ?? 1,
+    languageVersion: parsed.languageVersion ?? 1,
     sprites: parsed.sprites ?? [],
     blocks:
       parsed.blocks &&

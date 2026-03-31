@@ -3,6 +3,7 @@
 import {
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
   useSyncExternalStore,
@@ -26,6 +27,7 @@ import {
   getBlockDefs,
   getBlockSize,
   getInputValue,
+  type BlockAssetOptions,
 } from "../block-editor/blocks"
 import { BlockEditorController } from "../block-editor/controller"
 import { BlockView } from "../block-editor/view"
@@ -105,7 +107,16 @@ export function BlockWorkspace({
 }) {
   const dispatch = useAppDispatch()
   const blockDataMap = useAppSelector((s) => s.sprites.blockDataMap)
-  const spriteNames = useAppSelector((s) => s.sprites.list.map((sp) => sp.name))
+  const spriteList = useAppSelector((s) => s.sprites.list)
+  const spriteNames = useMemo(() => spriteList.map((sp) => sp.name), [spriteList])
+  const selectedSpriteAssets = useMemo<BlockAssetOptions | undefined>(() => {
+    const selectedSprite = spriteList.find((sprite) => sprite.id === selectedSpriteId)
+    if (!selectedSprite) return undefined
+    return {
+      costumes: selectedSprite.costumes.map((costume) => costume.name),
+      sounds: selectedSprite.sounds?.map((sound) => sound.name) ?? [],
+    }
+  }, [selectedSpriteId, spriteList])
 
   const svgRef = useRef<SVGSVGElement>(null)
   const overlayRef = useRef<HTMLDivElement>(null)
@@ -132,6 +143,19 @@ export function BlockWorkspace({
     controller.getSnapshot,
     controller.getSnapshot
   )
+
+  // スプライト名 → そのスプライトのカスタム変数リスト
+  const spriteVariablesMap = useMemo(() => {
+    const map: Record<string, string[]> = {}
+    for (const sp of spriteList) {
+      if (sp.id === selectedSpriteId) {
+        map[sp.name] = snapshot.customVariables
+      } else {
+        map[sp.name] = blockDataMap[sp.id]?.customVariables ?? []
+      }
+    }
+    return map
+  }, [spriteList, selectedSpriteId, blockDataMap, snapshot.customVariables])
 
   const workspaceRef = useRef<Workspace | null>(null)
   const interactionRef = useRef<InteractionManager | null>(null)
@@ -221,7 +245,7 @@ export function BlockWorkspace({
       const canvasElement = canvasRef.current
       if (!workspace || !mouse || !canvasElement) return
 
-      const def = getBlockDefById(defId, snapshot.customProcedures, spriteNames)
+      const def = getBlockDefById(defId, snapshot.customProcedures, spriteNames, selectedSpriteAssets)
       if (!def) return
 
       event.preventDefault()
@@ -272,7 +296,7 @@ export function BlockWorkspace({
       copy: HeaderReporterCopy,
       event: ReactMouseEvent<HTMLElement>
     ) => {
-      const defs = getBlockDefs(snapshot.customProcedures, spriteNames)
+      const defs = getBlockDefs(snapshot.customProcedures, spriteNames, selectedSpriteAssets)
       const def = copy.targetOpcode !== undefined
         ? defs.find(
             (item) =>
@@ -720,6 +744,8 @@ export function BlockWorkspace({
             nestedSlots={snapshot.nestedSlots}
             customVariables={snapshot.customVariables}
             spriteNames={spriteNames}
+            spriteVariablesMap={spriteVariablesMap}
+            assetOptions={selectedSpriteAssets}
             onInputValueChange={controller.updateInputValue.bind(controller)}
             onHeaderReporterMouseDown={handleHeaderReporterMouseDown}
             onParamChipMouseDown={handleParamChipMouseDown}

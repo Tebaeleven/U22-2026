@@ -313,6 +313,10 @@ function getArgName(
     scene_timescale: ["SCALE"],
     scene_save: ["KEY", "VALUE"],
     scene_load: ["KEY"],
+    // ── 他スプライトの変数アクセス ──
+    sprite_getvariable: ["VARIABLE", "SPRITE"],
+    sprite_setvariableto: ["VARIABLE", "SPRITE", "VALUE"],
+    sprite_changevariableby: ["VARIABLE", "SPRITE", "VALUE"],
     // ── モダン言語拡張: スプライト操作 ──
     sprite_getprop: ["SPRITE", "PROP"],
     sprite_setlayer: ["LAYER"],

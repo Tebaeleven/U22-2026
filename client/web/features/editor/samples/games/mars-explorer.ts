@@ -50,6 +50,8 @@ export const marsExplorerGame: SampleProject = {
   ],
   pseudocode: `
 class 探検家 {
+  var oxygen = 100
+  var alive = 1
   onCreate() {
     this.setPhysics("dynamic")
     this.setAllowGravity("off")

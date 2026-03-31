@@ -36,6 +36,9 @@ class プレイヤー {
   }
 }
 class 追尾敵 {
+  var speed = 120
+  var dist = distanceTo("プレイヤー")
+  var ang = angleTo("プレイヤー")
   onCreate() {
     this.setPhysics("dynamic")
     this.setAllowGravity("off")

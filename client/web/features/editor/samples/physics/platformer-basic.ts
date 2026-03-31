@@ -33,7 +33,7 @@ class プレイヤー {
       this.setVelocityX(0)
     }
     if (this.isKeyPressed("up arrow") && this.isOnGround()) {
-      this.setVelocityY(-550)
+      this.setVelocityY(550)
       this.emitParticles(this.x, this.y - 40, 6, "#aaaaaa", 60)
     }
   }

@@ -17,7 +17,9 @@ import {
   C_HEADER_H,
   C_W,
   INLINE_SLOT_BASE_H,
+  type BlockAssetOptions,
   SPRITE_DROPDOWN_OPCODES,
+  CROSS_SPRITE_VAR_OPCODES,
   getHeaderReporterCopies,
   getHeaderReporterCopyLabel,
   getInputDisplayValue,
@@ -58,6 +60,8 @@ function InlineToken({
   nestedSlots,
   customVariables,
   spriteNames,
+  spriteVariablesMap,
+  assetOptions,
   onInputValueChange,
   onParamChipMouseDown,
   onReporterCopyMouseDown,
@@ -69,6 +73,8 @@ function InlineToken({
   nestedSlots: Record<string, string>
   customVariables?: string[]
   spriteNames?: string[]
+  spriteVariablesMap?: Record<string, string[]>
+  assetOptions?: BlockAssetOptions
   onInputValueChange?: (
     blockId: string,
     inputIndex: number,
@@ -186,15 +192,35 @@ function InlineToken({
   }
 
   if (input.type === "dropdown") {
-    const isVariableDropdown = block.def.category === "variables"
-    const extraOptions = isVariableDropdown && customVariables
-      ? customVariables.filter((v) => !input.options.includes(v))
-      : []
-
     // スプライト関連ドロップダウンは動的にoptionsを差し替える
     const spriteConfig = block.def.opcode ? SPRITE_DROPDOWN_OPCODES[block.def.opcode] : undefined
     const isSpriteDropdown = spriteConfig && spriteConfig.inputIndex === index && spriteNames
-    const baseOptions = isSpriteDropdown
+
+    // クロススプライト変数ブロックの変数ドロップダウンでは、選択中のスプライトの変数を表示する
+    const crossVarConfig = block.def.opcode ? CROSS_SPRITE_VAR_OPCODES[block.def.opcode] : undefined
+    const isCrossVarDropdown = crossVarConfig && crossVarConfig.variableInputIndex === index
+    let resolvedVariables = customVariables
+    if (isCrossVarDropdown && spriteVariablesMap) {
+      const spriteInput = block.def.inputs[crossVarConfig.spriteInputIndex]
+      const spriteDefault = spriteInput && "default" in spriteInput ? spriteInput.default : ""
+      const selectedSprite = block.inputValues[crossVarConfig.spriteInputIndex] ?? spriteDefault ?? ""
+      resolvedVariables = spriteVariablesMap[String(selectedSprite)] ?? []
+    }
+
+    const isVariableDropdown = block.def.category === "variables" && !isSpriteDropdown
+    const isSoundDropdown = ["sound_play", "sound_playloop", "sound_stop", "sound_setvolume"].includes(block.def.opcode ?? "") && index === 0
+    const isCostumeDropdown = block.def.opcode === "looks_switchcostumeto" && index === 0
+    const extraOptions = isVariableDropdown && resolvedVariables
+      ? resolvedVariables.filter((v) => !input.options.includes(v))
+      : []
+    const assetDrivenOptions = isSoundDropdown
+      ? assetOptions?.sounds
+      : isCostumeDropdown
+        ? assetOptions?.costumes
+        : undefined
+    const baseOptions = assetDrivenOptions && assetDrivenOptions.length > 0
+      ? [...assetDrivenOptions, ...input.options.filter((option) => !assetDrivenOptions.includes(option))]
+      : isSpriteDropdown
       ? [...spriteConfig.prefixOptions, ...spriteNames]
       : input.options
     // 現在の選択値がoptionsに含まれない場合でもフォールバックを防ぐ
@@ -279,6 +305,8 @@ export function BlockView({
   nestedSlots,
   customVariables,
   spriteNames,
+  spriteVariablesMap,
+  assetOptions,
   onInputValueChange,
   onHeaderReporterMouseDown,
   onParamChipMouseDown,
@@ -293,6 +321,8 @@ export function BlockView({
   nestedSlots?: Record<string, string>
   customVariables?: string[]
   spriteNames?: string[]
+  spriteVariablesMap?: Record<string, string[]>
+  assetOptions?: BlockAssetOptions
   onInputValueChange?: (
     blockId: string,
     inputIndex: number,
@@ -335,6 +365,8 @@ export function BlockView({
         nestedSlots={ns}
         customVariables={customVariables}
         spriteNames={spriteNames}
+        spriteVariablesMap={spriteVariablesMap}
+        assetOptions={assetOptions}
         onInputValueChange={onInputValueChange}
         onParamChipMouseDown={onParamChipMouseDown}
         onReporterCopyMouseDown={onHeaderReporterMouseDown}

@@ -52,6 +52,10 @@ export const sokobanGame: SampleProject = {
   ],
   pseudocode: `
 class プレイヤー {
+  var moves = 0
+  var lastX = -320
+  var lastY = -64
+  var cleared = 0
   onCreate() {
     this.setPhysics("dynamic")
     this.setAllowGravity("off")
@@ -96,6 +100,9 @@ class プレイヤー {
 }
 
 class 箱1 {
+  var onGoal = 0
+  var prevX = x
+  var prevY = y
   onCreate() {
     this.setPhysics("dynamic")
     this.setAllowGravity("off")
@@ -128,6 +135,9 @@ class 箱1 {
 }
 
 class 箱2 {
+  var onGoal = 0
+  var prevX = x
+  var prevY = y
   onCreate() {
     this.setPhysics("dynamic")
     this.setAllowGravity("off")
@@ -160,6 +170,9 @@ class 箱2 {
 }
 
 class 箱3 {
+  var onGoal = 0
+  var prevX = x
+  var prevY = y
   onCreate() {
     this.setPhysics("dynamic")
     this.setAllowGravity("off")
@@ -192,6 +205,7 @@ class 箱3 {
 }
 
 class ゴール {
+  var goalCount = 0
   onCreate() {
     this.hide()
     this.goalCount = 0
@@ -250,7 +264,7 @@ class HUD {
   }
 
   onEvent("update-hud") {
-    this.updateTextAt("moves", join("手数: ", this.moves))
+    this.updateTextAt("moves", join("手数: ", プレイヤー.moves))
   }
 
   onEvent("all-clear") {

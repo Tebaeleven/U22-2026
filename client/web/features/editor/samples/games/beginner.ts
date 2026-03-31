@@ -21,6 +21,7 @@ export const beginnerGame: SampleProject = {
   ],
   pseudocode: `
 class プレイヤー {
+  var score = 0
   onCreate() {
     this.setPhysics("dynamic")
     this.setGravity(800)
@@ -42,7 +43,7 @@ class プレイヤー {
       this.setVelocityX(0)
     }
     if (this.isKeyPressed("up arrow") && this.isOnGround()) {
-      this.setVelocityY(-500)
+      this.setVelocityY(500)
       this.emitParticles(this.x, this.y - 40, 5, "#aaaaaa", 60)
     }
   }

@@ -21,6 +21,8 @@ export const cameraZoomScroll: SampleProject = {
   ],
   pseudocode: `
 class プレイヤー {
+  var zoomLevel = 1
+  var wheel = mouseWheel
   onCreate() {
     this.setPhysics("dynamic")
     this.setAllowGravity("off")

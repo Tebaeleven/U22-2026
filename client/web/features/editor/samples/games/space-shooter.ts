@@ -27,6 +27,9 @@ export const spaceShooterGame: SampleProject = {
   ],
   pseudocode: `
 class 自機 {
+  var score = 0
+  var hp = 100
+  var gameOver = 0
   onCreate() {
     this.setPhysics("dynamic")
     this.setAllowGravity("off")
@@ -48,9 +51,9 @@ class 自機 {
         this.setVelocityX(350)
       }
       if (this.isKeyPressed("up arrow")) {
-        this.setVelocityY(-350)
-      } else if (this.isKeyPressed("down arrow")) {
         this.setVelocityY(350)
+      } else if (this.isKeyPressed("down arrow")) {
+        this.setVelocityY(-350)
       }
 
       this.graphics.clear()
@@ -76,6 +79,8 @@ class 自機 {
 
   onKeyPress("space") {
     if (this.gameOver == 0) {
+      弾.spawnX = this.x
+      弾.spawnY = this.y + 40
       this.createClone("弾")
       this.emitParticles(this.x, this.y + 30, 5, "#ffcc00", 100)
     }
@@ -105,6 +110,8 @@ class 自機 {
 }
 
 class 弾 {
+  var spawnX = 0
+  var spawnY = 0
   onCreate() {
     this.hide()
   }
@@ -112,13 +119,15 @@ class 弾 {
     this.show()
     this.setPhysics("dynamic")
     this.setAllowGravity("off")
-    this.setVelocityY(-600)
+    this.setPosition(this.spawnX, this.spawnY)
+    this.setVelocityY(600)
     this.wait(1.5)
     this.deleteClone()
   }
 }
 
 class 敵 {
+  var spawnX = -700
   onCreate() {
     this.hide()
     this.spawnX = -700

@@ -32,6 +32,11 @@ export const asteroidGame: SampleProject = {
   ],
   pseudocode: `
 class 宇宙船 {
+  var score = 0
+  var lives = 3
+  var gameOver = 0
+  var invincible = 0
+  var fireAngle = 0
   onCreate() {
     this.setPhysics("dynamic")
     this.setAllowGravity("off")
@@ -64,6 +69,9 @@ class 宇宙船 {
   }
   onKeyPress("space") {
     if (this.gameOver == 0) {
+      弾.spawnX = this.x
+      弾.spawnY = this.y
+      弾.fireAngle = this.fireAngle
       this.createClone("弾")
       this.playSound("laser")
     }
@@ -134,6 +142,9 @@ class 宇宙船 {
   }
 }
 class 弾 {
+  var spawnX = 0
+  var spawnY = 0
+  var fireAngle = 0
   onCreate() {
     this.hide()
   }
@@ -141,6 +152,7 @@ class 弾 {
     this.show()
     this.setPhysics("dynamic")
     this.setAllowGravity("off")
+    this.setPosition(this.spawnX, this.spawnY)
     this.velocityFromAngle(this.fireAngle, 600)
     this.setAngle(this.fireAngle)
     this.wait(1.5)
@@ -148,6 +160,8 @@ class 弾 {
   }
 }
 class 小惑星1 {
+  var alive = 1
+  var speed = 80
   onCreate() {
     this.setPhysics("dynamic")
     this.setAllowGravity("off")
@@ -175,6 +189,8 @@ class 小惑星1 {
   }
 }
 class 小惑星2 {
+  var alive = 1
+  var speed = 100
   onCreate() {
     this.setPhysics("dynamic")
     this.setAllowGravity("off")
@@ -202,6 +218,8 @@ class 小惑星2 {
   }
 }
 class 小惑星3 {
+  var alive = 1
+  var speed = 60
   onCreate() {
     this.setPhysics("dynamic")
     this.setAllowGravity("off")

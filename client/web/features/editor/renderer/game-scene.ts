@@ -3,6 +3,18 @@ import type { SpriteRuntime, PhysicsMode, GameSceneProxy } from "../engine/types
 import { STAGE_WIDTH, STAGE_HEIGHT } from "../engine/types"
 import type { SpriteDef, ColliderDef } from "../constants"
 import { shouldReloadTexture } from "./texture-sync"
+import {
+  directionToStageVector,
+  phaserToStagePoint,
+  phaserToStageVector,
+  stageToPhaserPoint,
+  stageToPhaserVector,
+} from "./stage-coordinate-utils"
+import { FrameContactRegistry } from "./contact-registry"
+
+type DynamicSceneImage = Phaser.Types.Physics.Arcade.ImageWithDynamicBody
+type StaticSceneImage = Phaser.Types.Physics.Arcade.ImageWithStaticBody
+type SceneBody = Phaser.Physics.Arcade.Body | Phaser.Physics.Arcade.StaticBody
 
 /**
  * GameScene — Phaser のメインシーン
@@ -26,6 +38,18 @@ export class GameScene extends Phaser.Scene implements GameSceneProxy {
   private activeColliders: Phaser.Physics.Arcade.Collider[] = []
   /** スプライトIDごとのコライダー管理（差分追加/削除用） */
   private perSpriteColliders: Map<string, Phaser.Physics.Arcade.Collider[]> = new Map()
+  /** 最新の SpriteDef 一覧（サウンド/コスチューム解決用） */
+  private latestSpriteDefs: SpriteDef[] = []
+  /** クローンを含むアセット所有者 */
+  private spriteAssetOwnerMap = new Map<string, string>()
+  /** 再生中サウンド */
+  private activeAudioMap = new Map<string, HTMLAudioElement>()
+  /** スプライト単位のサウンド音量 */
+  private soundVolumeMap = new Map<string, number>()
+  /** 物理 geometry の差分更新用シグネチャ */
+  private geometrySignatureMap = new Map<string, string>()
+  /** 1フレーム内の接触ペア */
+  private contactRegistry = new FrameContactRegistry()
 
   private static readonly SPEECH_FONT_SIZE = 120
   private static readonly SPEECH_PADDING_X = 16
@@ -43,8 +67,11 @@ export class GameScene extends Phaser.Scene implements GameSceneProxy {
 
   create() {
     this.cameras.main.setBackgroundColor("#ffffff")
+    this.physics.world.setBounds(0, 0, STAGE_WIDTH, STAGE_HEIGHT)
     this.gridGraphics = this.add.graphics()
     this.drawGrid()
+    this.events.off("preupdate", this.beginContactFrame, this)
+    this.events.on("preupdate", this.beginContactFrame, this)
 
     // ステージ背景クリック検出（スプライト上でなければ背景クリック扱い）
     this.input.on("pointerdown", (_pointer: Phaser.Input.Pointer, currentlyOver: Phaser.GameObjects.GameObject[]) => {
@@ -190,16 +217,194 @@ export class GameScene extends Phaser.Scene implements GameSceneProxy {
     }
   }
 
+  private applyStageVelocity(body: Phaser.Physics.Arcade.Body, vx: number, vy: number) {
+    const phaserVelocity = stageToPhaserVector(vx, vy)
+    body.setVelocity(phaserVelocity.x, phaserVelocity.y)
+  }
+
+  private applyStageAcceleration(body: Phaser.Physics.Arcade.Body, ax: number, ay: number) {
+    const phaserAcceleration = stageToPhaserVector(ax, ay)
+    body.setAcceleration(phaserAcceleration.x, phaserAcceleration.y)
+  }
+
+  private getPhysicsMode(id: string): PhysicsMode {
+    return this.physicsModeMap.get(id) ?? "none"
+  }
+
+  private getDynamicBody(id: string): Phaser.Physics.Arcade.Body | null {
+    if (this.getPhysicsMode(id) !== "dynamic") return null
+    const img = this.spriteMap.get(id)
+    if (!img) return null
+    return (img as DynamicSceneImage).body ?? null
+  }
+
+  private getStaticBody(id: string): Phaser.Physics.Arcade.StaticBody | null {
+    if (this.getPhysicsMode(id) !== "static") return null
+    const img = this.spriteMap.get(id)
+    if (!img) return null
+    return (img as StaticSceneImage).body ?? null
+  }
+
+  private getBody(id: string): SceneBody | null {
+    return this.getDynamicBody(id) ?? this.getStaticBody(id)
+  }
+
+  private getBodyForObject(id: string, imageObj: Phaser.GameObjects.Image): SceneBody | null {
+    const mode = this.getPhysicsMode(id)
+    if (mode === "dynamic") {
+      return (imageObj as DynamicSceneImage).body ?? null
+    }
+    if (mode === "static") {
+      return (imageObj as StaticSceneImage).body ?? null
+    }
+    return null
+  }
+
+  private createSpriteObject(
+    spriteId: string,
+    mode: PhysicsMode,
+    x: number,
+    y: number,
+    textureKey: string
+  ): Phaser.GameObjects.Image {
+    const resolvedTexture = this.textures.exists(textureKey) ? textureKey : "__DEFAULT"
+    let imageObj: Phaser.GameObjects.Image
+
+    switch (mode) {
+      case "dynamic":
+        imageObj = this.physics.add.image(x, y, resolvedTexture)
+        break
+      case "static":
+        imageObj = this.physics.add.staticImage(x, y, resolvedTexture)
+        break
+      case "none":
+      default:
+        imageObj = this.add.image(x, y, resolvedTexture)
+        break
+    }
+
+    this.spriteMap.set(spriteId, imageObj)
+    this.physicsModeMap.set(spriteId, mode)
+    return imageObj
+  }
+
+  private enableSelectionInteraction(imageObj: Phaser.GameObjects.Image, spriteId: string) {
+    imageObj.setInteractive({ useHandCursor: true })
+    imageObj.removeAllListeners("pointerdown")
+    imageObj.on("pointerdown", () => {
+      this.onSpriteClicked?.(spriteId)
+    })
+  }
+
+  private ensureSpriteObject(
+    spriteId: string,
+    mode: PhysicsMode,
+    x: number,
+    y: number,
+    textureKey: string,
+    options?: { interactive?: boolean }
+  ): Phaser.GameObjects.Image {
+    const existing = this.spriteMap.get(spriteId)
+    const prevMode = this.getPhysicsMode(spriteId)
+    let imageObj = existing
+
+    if (!imageObj || prevMode !== mode) {
+      this.removeCollidersForSprite(spriteId)
+      if (imageObj) {
+        imageObj.destroy()
+      }
+      imageObj = this.createSpriteObject(spriteId, mode, x, y, textureKey)
+      if (mode !== "none") {
+        this.addCollidersForSprite(spriteId, mode)
+      }
+    }
+
+    if (options?.interactive) {
+      this.enableSelectionInteraction(imageObj, spriteId)
+    }
+
+    return imageObj
+  }
+
+  private static bodiesMatchPosition(imageObj: Phaser.GameObjects.Image, x: number, y: number) {
+    return Math.abs(imageObj.x - x) < 0.001 && Math.abs(imageObj.y - y) < 0.001
+  }
+
+  private computeGeometrySignature(
+    sprite: SpriteRuntime,
+    collider: ColliderDef | undefined,
+    width: number,
+    height: number
+  ) {
+    return JSON.stringify({
+      physicsMode: sprite.physicsMode ?? "none",
+      size: sprite.size,
+      width,
+      height,
+      originX: sprite.originX ?? 0.5,
+      originY: sprite.originY ?? 0.5,
+      bodyEnabled: sprite.bodyEnabled,
+      collider: collider ?? null,
+    })
+  }
+
+  private applyStaticBodyGeometry(
+    spriteId: string,
+    imageObj: Phaser.GameObjects.Image,
+    collider: ColliderDef | undefined,
+    width: number,
+    height: number
+  ) {
+    if (this.getPhysicsMode(spriteId) !== "static") return
+    ;(imageObj as StaticSceneImage).refreshBody()
+    if (collider) {
+      this.applyCollider(spriteId, imageObj, collider, width, height)
+    }
+  }
+
+  private isDynamicBodyGrounded(body: Phaser.Physics.Arcade.Body | null) {
+    if (!body?.enable) return false
+    return Boolean(body.blocked.down || body.touching.down)
+  }
+
+  private beginContactFrame() {
+    this.contactRegistry.beginFrame()
+  }
+
+  private recordContactPair(idA: string, idB: string) {
+    this.contactRegistry.recordCallback(idA, idB)
+  }
+
+  private getAssetOwnerId(spriteId: string) {
+    return this.spriteAssetOwnerMap.get(spriteId) ?? spriteId
+  }
+
+  private resolveSpriteDef(spriteId: string) {
+    const ownerId = this.getAssetOwnerId(spriteId)
+    return this.latestSpriteDefs.find((def) => def.id === ownerId)
+  }
+
+  private resolveSpriteSound(spriteId: string, soundName: string) {
+    const def = this.resolveSpriteDef(spriteId)
+    if (!def?.sounds?.length) return null
+    return def.sounds.find((sound) => sound.name === soundName || sound.id === soundName) ?? null
+  }
+
+  private audioKey(spriteId: string, soundName: string) {
+    return `${spriteId}:${soundName}`
+  }
+
   /**
    * Arcade Physics のボディを設定
    */
   private applyCollider(
+    spriteId: string,
     gameObj: Phaser.GameObjects.Image,
     collider: ColliderDef,
     width: number,
     height: number
   ) {
-    const body = gameObj.body as Phaser.Physics.Arcade.Body | null
+    const body = this.getBodyForObject(spriteId, gameObj)
     if (!body) return
 
     if (collider.type === "circle") {
@@ -235,13 +440,16 @@ export class GameScene extends Phaser.Scene implements GameSceneProxy {
     sprites: SpriteRuntime[],
     spriteDefs?: SpriteDef[]
   ) {
+    if (spriteDefs) {
+      this.latestSpriteDefs = spriteDefs
+    }
     const activeIds = new Set<string>()
 
     for (const sprite of sprites) {
       activeIds.add(sprite.id)
+      this.spriteAssetOwnerMap.set(sprite.id, sprite.parentId ?? sprite.id)
 
-      const px = STAGE_WIDTH / 2 + sprite.x
-      const py = STAGE_HEIGHT / 2 - sprite.y
+      const { x: px, y: py } = stageToPhaserPoint(sprite.x, sprite.y)
 
       // 対応する SpriteDef からコスチューム dataUrl を取得（クローンは親の定義を使う）
       const def = spriteDefs?.find((d) => d.id === sprite.id)
@@ -257,78 +465,93 @@ export class GameScene extends Phaser.Scene implements GameSceneProxy {
         sprite.size
       )
 
-      let imageObj = this.spriteMap.get(sprite.id)
-
-      if (!imageObj) {
-        // 新しいスプライトの作成
-        const hasTexture = this.textures.exists(texKey)
-        imageObj = this.physics.add.image(
-          px,
-          py,
-          hasTexture ? texKey : "__DEFAULT"
-        )
-        imageObj.setOrigin(0.5, 0.5)
-        // 物理モードに応じてボディを設定
-        const physMode = sprite.physicsMode ?? "none"
-        this.applyPhysicsMode(imageObj, physMode)
-        this.physicsModeMap.set(sprite.id, physMode)
-        this.spriteMap.set(sprite.id, imageObj)
-        this.addCollidersForSprite(sprite.id, physMode)
-      }
+      const currentPhysMode = sprite.physicsMode ?? "none"
+      const imageObj = this.ensureSpriteObject(sprite.id, currentPhysMode, px, py, texKey)
 
       this.syncSpriteTexture(sprite.id, imageObj, texKey, costume?.dataUrl)
 
-      // 物理モードが変わったら再適用
-      const currentPhysMode = sprite.physicsMode ?? "none"
-      const prevPhysMode = this.physicsModeMap.get(sprite.id) ?? "none"
-      if (currentPhysMode !== prevPhysMode) {
-        this.removeCollidersForSprite(sprite.id)
-        this.applyPhysicsMode(imageObj, currentPhysMode)
-        this.physicsModeMap.set(sprite.id, currentPhysMode)
-        this.addCollidersForSprite(sprite.id, currentPhysMode)
-      }
-
-      // サイズ・可視性・透明度・反転・色を適用
       imageObj.setScale(scale)
       imageObj.setVisible(sprite.visible)
       imageObj.setAlpha((sprite.opacity ?? 100) / 100)
       imageObj.setFlipX(sprite.flipX ?? false)
       imageObj.setAngle(sprite.angle ?? 0)
+      imageObj.setOrigin(sprite.originX ?? 0.5, sprite.originY ?? 0.5)
+      imageObj.setScrollFactor(sprite.scrollFactorX ?? 1, sprite.scrollFactorY ?? 1)
+      imageObj.setDepth(sprite.layer ?? 0)
       if (sprite.tint != null) {
         imageObj.setTint(sprite.tint)
+      } else {
+        imageObj.clearTint()
+      }
+
+      const colliderDef = def?.collider ?? this.colliderMap.get(sprite.id)
+      const geometrySignature = this.computeGeometrySignature(sprite, colliderDef, width, height)
+      const geometryChanged = this.geometrySignatureMap.get(sprite.id) !== geometrySignature
+      const moved = !GameScene.bodiesMatchPosition(imageObj, px, py)
+      this.geometrySignatureMap.set(sprite.id, geometrySignature)
+
+      const body = this.getBodyForObject(sprite.id, imageObj)
+      if (body) {
+        body.enable = sprite.bodyEnabled
       }
 
       // 物理プロパティを毎フレーム同期（クローン生成直後にも確実に適用される）
-      const body = imageObj.body as Phaser.Physics.Arcade.Body
-      if (body) {
+      const dynamicBody = currentPhysMode === "dynamic" ? this.getDynamicBody(sprite.id) : null
+      const staticBody = currentPhysMode === "static" ? this.getStaticBody(sprite.id) : null
+
+      if (dynamicBody) {
         if (sprite.allowGravity !== null && sprite.allowGravity !== undefined) {
-          body.setAllowGravity(sprite.allowGravity)
+          dynamicBody.setAllowGravity(sprite.allowGravity)
         }
         if (sprite.collideWorldBounds) {
-          body.setCollideWorldBounds(true)
+          dynamicBody.setCollideWorldBounds(true)
+        } else {
+          dynamicBody.setCollideWorldBounds(false)
         }
-        if (sprite.bounce > 0) {
-          body.setBounce(sprite.bounce, sprite.bounce)
-        }
+        dynamicBody.setBounce(sprite.bounce ?? 0, sprite.bounce ?? 0)
+        this.applyStageAcceleration(dynamicBody, sprite.accelerationX ?? 0, sprite.accelerationY ?? 0)
+        dynamicBody.setDrag(sprite.dragX ?? 0, sprite.dragY ?? 0)
+        dynamicBody.useDamping = sprite.useDamping ?? false
+        dynamicBody.setMaxVelocity(sprite.maxVelocityX ?? 10000, sprite.maxVelocityY ?? 10000)
+        dynamicBody.setAngularVelocity(sprite.angularVelocity ?? 0)
+        dynamicBody.setImmovable(sprite.immovable ?? false)
+        dynamicBody.setMass(sprite.mass ?? 1)
+        ;(dynamicBody as unknown as { pushable: boolean }).pushable = sprite.pushable ?? true
         // velocity を同期（クローン直後に Phaser オブジェクトがなかった場合のフォールバック）
         if (currentPhysMode === "dynamic" && (sprite.velocityX !== 0 || sprite.velocityY !== 0)) {
-          const bv = body.velocity
+          const bv = dynamicBody.velocity
           if (bv.x === 0 && bv.y === 0) {
-            body.setVelocity(sprite.velocityX, sprite.velocityY)
+            this.applyStageVelocity(dynamicBody, sprite.velocityX, sprite.velocityY)
           }
         }
       }
 
+      if (staticBody) {
+        staticBody.setMass(sprite.mass ?? 1)
+        ;(staticBody as unknown as { pushable: boolean }).pushable = sprite.pushable ?? false
+      }
+
       // dynamic スプライトは Phaser が位置を管理するので VM からの位置更新をスキップ
-      if (currentPhysMode !== "dynamic") {
+      if (currentPhysMode === "static") {
+        if (moved) {
+          imageObj.setPosition(px, py)
+        }
+        if (geometryChanged || moved) {
+          this.applyStaticBodyGeometry(sprite.id, imageObj, colliderDef, width, height)
+        }
+      } else if (currentPhysMode === "none" && moved) {
         imageObj.setPosition(px, py)
       }
 
-      // 当たり判定を適用
-      const colliderDef = def?.collider ?? this.colliderMap.get(sprite.id)
+      if (currentPhysMode === "dynamic" && geometryChanged && colliderDef) {
+        this.applyCollider(sprite.id, imageObj, colliderDef, width, height)
+      }
+
+      // 当たり判定を保持
       if (colliderDef) {
-        this.applyCollider(imageObj, colliderDef, width, height)
         this.colliderMap.set(sprite.id, colliderDef)
+      } else {
+        this.colliderMap.delete(sprite.id)
       }
 
       // 吹き出し
@@ -353,8 +576,7 @@ export class GameScene extends Phaser.Scene implements GameSceneProxy {
           this.speechMap.set(sprite.id, speech)
         }
         speech.setText(sprite.sayText)
-        const textPx = STAGE_WIDTH / 2 + sprite.sayTextX
-        const textPy = STAGE_HEIGHT / 2 - sprite.sayTextY
+        const { x: textPx, y: textPy } = stageToPhaserPoint(sprite.sayTextX, sprite.sayTextY)
         speech.setPosition(textPx, textPy)
         speech.setVisible(true)
       } else {
@@ -367,11 +589,19 @@ export class GameScene extends Phaser.Scene implements GameSceneProxy {
     // 削除されたスプライトをクリーンアップ
     for (const [id, imageObj] of this.spriteMap) {
       if (!activeIds.has(id)) {
+        this.removeCollidersForSprite(id)
         imageObj.destroy()
         this.spriteMap.delete(id)
         this.colliderMap.delete(id)
         this.currentTextureMap.delete(id)
         this.physicsModeMap.delete(id)
+        this.spriteAssetOwnerMap.delete(id)
+        this.geometrySignatureMap.delete(id)
+        for (const key of [...this.activeAudioMap.keys()]) {
+          if (key.startsWith(`${id}:`)) {
+            this.stopAudioByKey(key)
+          }
+        }
         const speech = this.speechMap.get(id)
         if (speech) {
           speech.destroy()
@@ -385,6 +615,7 @@ export class GameScene extends Phaser.Scene implements GameSceneProxy {
    * 初期スプライト（停止状態）を表示
    */
   showInitialSprites(sprites: SpriteDef[]) {
+    this.latestSpriteDefs = sprites
     const activeIds = new Set<string>()
 
     // カメラ状態をリセット
@@ -404,8 +635,8 @@ export class GameScene extends Phaser.Scene implements GameSceneProxy {
 
     for (const sprite of sprites) {
       activeIds.add(sprite.id)
-      const px = STAGE_WIDTH / 2 + sprite.x
-      const py = STAGE_HEIGHT / 2 - sprite.y
+      this.spriteAssetOwnerMap.set(sprite.id, sprite.id)
+      const { x: px, y: py } = stageToPhaserPoint(sprite.x, sprite.y)
       const costume = sprite.costumes[sprite.currentCostumeIndex]
       const texKey = this.textureKey(sprite.id, sprite.currentCostumeIndex)
       const { scale, width, height } = this.getScaledSize(
@@ -415,42 +646,40 @@ export class GameScene extends Phaser.Scene implements GameSceneProxy {
       )
 
       let imageObj = this.spriteMap.get(sprite.id)
-      if (!imageObj) {
-        const hasTexture = this.textures.exists(texKey)
-        imageObj = this.physics.add.image(
-          px,
-          py,
-          hasTexture ? texKey : "__DEFAULT"
-        )
-        imageObj.setOrigin(0.5, 0.5)
-
-        // クリック検出（停止中にスプライトをクリック → Gizmo 表示）
-        imageObj.setInteractive({ useHandCursor: true })
-        imageObj.on("pointerdown", () => {
-          this.onSpriteClicked?.(sprite.id)
-        })
-
-        this.spriteMap.set(sprite.id, imageObj)
-      }
-
-      this.applyPhysicsMode(imageObj, "none")
-      this.physicsModeMap.set(sprite.id, "none")
+      imageObj = this.ensureSpriteObject(sprite.id, "none", px, py, texKey, { interactive: true })
       this.syncSpriteTexture(sprite.id, imageObj, texKey, costume?.dataUrl)
       imageObj.setPosition(px, py)
       imageObj.setScale(scale)
       imageObj.setVisible(sprite.visible)
+      imageObj.setDepth(0)
+      imageObj.setScrollFactor(1, 1)
 
       this.colliderMap.set(sprite.id, sprite.collider)
-      this.applyCollider(imageObj, sprite.collider, width, height)
+      this.geometrySignatureMap.set(
+        sprite.id,
+        JSON.stringify({
+          physicsMode: "none",
+          size: sprite.size,
+          width,
+          height,
+          originX: 0.5,
+          originY: 0.5,
+          bodyEnabled: true,
+          collider: sprite.collider,
+        })
+      )
     }
 
     for (const [id, imageObj] of this.spriteMap) {
       if (activeIds.has(id)) continue
+      this.removeCollidersForSprite(id)
       imageObj.destroy()
       this.spriteMap.delete(id)
       this.colliderMap.delete(id)
       this.currentTextureMap.delete(id)
       this.physicsModeMap.delete(id)
+      this.spriteAssetOwnerMap.delete(id)
+      this.geometrySignatureMap.delete(id)
     }
   }
 
@@ -461,8 +690,8 @@ export class GameScene extends Phaser.Scene implements GameSceneProxy {
     const a = this.spriteMap.get(spriteIdA)
     const b = this.spriteMap.get(spriteIdB)
     if (!a || !b) return false
-    const bodyA = a.body as Phaser.Physics.Arcade.Body
-    const bodyB = b.body as Phaser.Physics.Arcade.Body
+    const bodyA = this.getBodyForObject(spriteIdA, a)
+    const bodyB = this.getBodyForObject(spriteIdB, b)
     if (!bodyA || !bodyB) return false
     if (!bodyA.enable || !bodyB.enable) return false
     return Phaser.Geom.Intersects.RectangleToRectangle(
@@ -471,24 +700,32 @@ export class GameScene extends Phaser.Scene implements GameSceneProxy {
     )
   }
 
+  readContactPairs(): { idA: string; idB: string }[] {
+    const ids = [...this.spriteMap.keys()]
+    for (let i = 0; i < ids.length; i += 1) {
+      for (let j = i + 1; j < ids.length; j += 1) {
+        const idA = ids[i]
+        const idB = ids[j]
+        if (this.contactRegistry.hasPair(idA, idB)) continue
+        if (this.checkOverlap(idA, idB)) {
+          this.contactRegistry.recordFallback(idA, idB)
+        }
+      }
+    }
+    return this.contactRegistry.readPairs()
+  }
+
   // ─── GameSceneProxy 実装 ─────────────────────────────
 
   /** スプライトが地面に接地しているか */
   isOnGround(spriteId: string): boolean {
-    const img = this.spriteMap.get(spriteId)
-    if (!img) return false
-    const body = img.body as Phaser.Physics.Arcade.Body
-    if (!body) return false
-    return body.blocked.down || body.touching.down
+    return this.isDynamicBodyGrounded(this.getDynamicBody(spriteId))
   }
 
   /** マウス座標をステージ座標系で返す */
   getMousePosition(): { x: number; y: number } {
     const pointer = this.input.activePointer
-    return {
-      x: pointer.x - STAGE_WIDTH / 2,
-      y: STAGE_HEIGHT / 2 - pointer.y,
-    }
+    return phaserToStagePoint(pointer.x, pointer.y)
   }
 
   /** ステージ全体の重力を設定 */
@@ -498,39 +735,73 @@ export class GameScene extends Phaser.Scene implements GameSceneProxy {
 
   /** スプライトの速度を設定 */
   setSpriteVelocity(id: string, vx: number, vy: number) {
-    const img = this.spriteMap.get(id)
-    if (!img) return
-    const body = img.body as Phaser.Physics.Arcade.Body
+    const body = this.getDynamicBody(id)
     if (!body) return
-    body.setVelocity(vx, vy)
+    this.applyStageVelocity(body, vx, vy)
   }
 
   /** スプライトの物理モードを動的に切り替え */
   setSpritePhysicsMode(id: string, mode: PhysicsMode) {
     const img = this.spriteMap.get(id)
     if (!img) return
-    const prevMode = this.physicsModeMap.get(id) ?? "none"
+    const prevMode = this.getPhysicsMode(id)
     if (prevMode === mode) return
+    const visible = img.visible
+    const alpha = img.alpha
+    const flipX = img.flipX
+    const angle = img.angle
+    const scaleX = img.scaleX
+    const scaleY = img.scaleY
+    const originX = img.originX
+    const originY = img.originY
+    const scrollFactorX = img.scrollFactorX
+    const scrollFactorY = img.scrollFactorY
+    const depth = img.depth
+    const x = img.x
+    const y = img.y
     this.removeCollidersForSprite(id)
-    this.applyPhysicsMode(img, mode)
-    this.physicsModeMap.set(id, mode)
-    this.addCollidersForSprite(id, mode)
+    const textureKey = this.currentTextureMap.get(id) ?? img.texture.key ?? "__DEFAULT"
+    img.destroy()
+    const nextObj = this.createSpriteObject(id, mode, x, y, textureKey)
+    nextObj.setVisible(visible)
+    nextObj.setAlpha(alpha)
+    nextObj.setFlipX(flipX)
+    nextObj.setAngle(angle)
+    nextObj.setScale(scaleX, scaleY)
+    nextObj.setOrigin(originX, originY)
+    nextObj.setScrollFactor(scrollFactorX, scrollFactorY)
+    nextObj.setDepth(depth)
+    this.syncSpriteTexture(id, nextObj, textureKey)
+    this.geometrySignatureMap.delete(id)
+    const collider = this.colliderMap.get(id)
+    if (collider && mode === "dynamic") {
+      this.applyCollider(id, nextObj, collider, nextObj.displayWidth, nextObj.displayHeight)
+    }
+    if (collider && mode === "static") {
+      this.applyStaticBodyGeometry(id, nextObj, collider, nextObj.displayWidth, nextObj.displayHeight)
+    }
+    if (mode !== "none") {
+      this.addCollidersForSprite(id, mode)
+    }
   }
 
   /** dynamic スプライトの Phaser 位置を読み取り、VM 側に逆同期するためのデータを返す */
-  readPhysicsPositions(): { id: string; x: number; y: number; vx: number; vy: number }[] {
-    const result: { id: string; x: number; y: number; vx: number; vy: number }[] = []
+  readPhysicsPositions(): { id: string; x: number; y: number; vx: number; vy: number; grounded: boolean }[] {
+    const result: { id: string; x: number; y: number; vx: number; vy: number; grounded: boolean }[] = []
     for (const [id, img] of this.spriteMap) {
-      if (this.physicsModeMap.get(id) !== "dynamic") continue
-      const body = img.body as Phaser.Physics.Arcade.Body
+      if (this.getPhysicsMode(id) !== "dynamic") continue
+      const body = this.getDynamicBody(id)
       if (!body) continue
       // Phaser 座標 → ステージ座標（中央基準）に変換
+      const position = phaserToStagePoint(img.x, img.y)
+      const velocity = phaserToStageVector(body.velocity.x, body.velocity.y)
       result.push({
         id,
-        x: img.x - STAGE_WIDTH / 2,
-        y: STAGE_HEIGHT / 2 - img.y,
-        vx: body.velocity.x,
-        vy: body.velocity.y,
+        x: position.x,
+        y: position.y,
+        vx: velocity.x,
+        vy: velocity.y,
+        grounded: this.isDynamicBodyGrounded(body),
       })
     }
     return result
@@ -543,18 +814,14 @@ export class GameScene extends Phaser.Scene implements GameSceneProxy {
 
   /** スプライトのバウンス(反発係数)を設定 */
   setSpriteBounce(id: string, bounceX: number, bounceY: number) {
-    const img = this.spriteMap.get(id)
-    if (!img) return
-    const body = img.body as Phaser.Physics.Arcade.Body
+    const body = this.getDynamicBody(id)
     if (!body) return
     body.setBounce(bounceX, bounceY)
   }
 
   /** スプライトのワールド境界衝突を設定 */
   setSpriteCollideWorldBounds(id: string, enabled: boolean) {
-    const img = this.spriteMap.get(id)
-    if (!img) return
-    const body = img.body as Phaser.Physics.Arcade.Body
+    const body = this.getDynamicBody(id)
     if (!body) return
     body.setCollideWorldBounds(enabled)
   }
@@ -563,39 +830,42 @@ export class GameScene extends Phaser.Scene implements GameSceneProxy {
   setSpriteBodyEnabled(id: string, enabled: boolean) {
     const img = this.spriteMap.get(id)
     if (!img) return
-    const body = img.body as Phaser.Physics.Arcade.Body
-    if (!body) return
-    body.enable = enabled
+    const body = this.getBody(id)
+    if (body) {
+      body.enable = enabled
+    }
     img.setVisible(enabled)
-  }
-
-  /** 衝突コールバックを登録 */
-  registerCollisionCallback(idA: string, idB: string, callback: () => void) {
-    const a = this.spriteMap.get(idA)
-    const b = this.spriteMap.get(idB)
-    if (!a || !b) return
-    const collider = this.physics.add.overlap(a, b, () => callback())
-    this.activeColliders.push(collider)
   }
 
   /** スプライトの位置を直接設定（物理ボディも含む） */
   setSpritePosition(id: string, x: number, y: number) {
     const img = this.spriteMap.get(id)
     if (!img) return
-    const px = STAGE_WIDTH / 2 + x
-    const py = STAGE_HEIGHT / 2 - y
+    const { x: px, y: py } = stageToPhaserPoint(x, y)
+    const mode = this.getPhysicsMode(id)
+    if (mode === "dynamic") {
+      img.setPosition(px, py)
+      const body = this.getDynamicBody(id)
+      if (body) {
+        body.reset(px, py)
+      }
+      return
+    }
+
     img.setPosition(px, py)
-    const body = img.body as Phaser.Physics.Arcade.Body
-    if (body) {
-      body.reset(px, py)
+    if (mode === "static") {
+      const staticImg = img as StaticSceneImage
+      staticImg.refreshBody()
+      const collider = this.colliderMap.get(id)
+      if (collider) {
+        this.applyCollider(id, img, collider, img.displayWidth, img.displayHeight)
+      }
     }
   }
 
   /** 個別の重力有効/無効 */
   setSpriteAllowGravity(id: string, enabled: boolean) {
-    const img = this.spriteMap.get(id)
-    if (!img) return
-    const body = img.body as Phaser.Physics.Arcade.Body
+    const body = this.getDynamicBody(id)
     if (!body) return
     body.setAllowGravity(enabled)
   }
@@ -639,8 +909,7 @@ export class GameScene extends Phaser.Scene implements GameSceneProxy {
   /** 矩形を描画（ステージ座標系） */
   graphicsFillRect(spriteId: string, stageX: number, stageY: number, w: number, h: number, color: number) {
     const g = this.getOrCreateGraphics(spriteId)
-    const px = STAGE_WIDTH / 2 + stageX
-    const py = STAGE_HEIGHT / 2 - stageY
+    const { x: px, y: py } = stageToPhaserPoint(stageX, stageY)
     g.fillStyle(color)
     g.fillRect(px, py, w, h)
   }
@@ -653,8 +922,7 @@ export class GameScene extends Phaser.Scene implements GameSceneProxy {
 
   /** 浮遊テキスト表示 */
   showFloatingText(text: string, stageX: number, stageY: number) {
-    const px = STAGE_WIDTH / 2 + stageX
-    const py = STAGE_HEIGHT / 2 - stageY
+    const { x: px, y: py } = stageToPhaserPoint(stageX, stageY)
     const t = this.add.text(px, py, text, {
       fontFamily: "monospace",
       fontSize: "48px",
@@ -677,8 +945,7 @@ export class GameScene extends Phaser.Scene implements GameSceneProxy {
     const img = this.spriteMap.get(id)
     if (!img) return Promise.resolve()
 
-    const px = STAGE_WIDTH / 2 + stageX
-    const py = STAGE_HEIGHT / 2 - stageY
+    const { x: px, y: py } = stageToPhaserPoint(stageX, stageY)
 
     return new Promise((resolve) => {
       this.tweens.add({
@@ -696,6 +963,7 @@ export class GameScene extends Phaser.Scene implements GameSceneProxy {
   removeSprite(id: string) {
     const img = this.spriteMap.get(id)
     if (img) {
+      this.removeCollidersForSprite(id)
       img.destroy()
       this.spriteMap.delete(id)
     }
@@ -708,8 +976,14 @@ export class GameScene extends Phaser.Scene implements GameSceneProxy {
     if (gfx) { gfx.destroy(); this.graphicsMap.delete(id) }
     this.colliderMap.delete(id)
     this.currentTextureMap.delete(id)
-    this.removeCollidersForSprite(id)
     this.physicsModeMap.delete(id)
+    this.spriteAssetOwnerMap.delete(id)
+    this.geometrySignatureMap.delete(id)
+    for (const key of [...this.activeAudioMap.keys()]) {
+      if (key.startsWith(`${id}:`)) {
+        this.stopAudioByKey(key)
+      }
+    }
   }
 
   /**
@@ -719,37 +993,11 @@ export class GameScene extends Phaser.Scene implements GameSceneProxy {
   moveSpritePosition(id: string, stageX: number, stageY: number) {
     const img = this.spriteMap.get(id)
     if (!img) return
-    img.setPosition(STAGE_WIDTH / 2 + stageX, STAGE_HEIGHT / 2 - stageY)
+    const point = stageToPhaserPoint(stageX, stageY)
+    img.setPosition(point.x, point.y)
   }
 
   // ─── 物理ヘルパー ────────────────────────────────────
-
-  /** ボディの物理モードを適用 */
-  private applyPhysicsMode(gameObj: Phaser.GameObjects.Image, mode: PhysicsMode) {
-    const body = gameObj.body as Phaser.Physics.Arcade.Body
-    if (!body) return
-
-    switch (mode) {
-      case "dynamic":
-        body.setImmovable(false)
-        body.setAllowGravity(true)
-        // collideWorldBounds は physics_setcollideworldbounds ブロックで制御
-        break
-      case "static":
-        body.setImmovable(true)
-        body.setAllowGravity(false)
-        body.setCollideWorldBounds(false)
-        body.setVelocity(0, 0)
-        break
-      case "none":
-      default:
-        body.setImmovable(true)
-        body.setAllowGravity(false)
-        body.setCollideWorldBounds(false)
-        body.setVelocity(0, 0)
-        break
-    }
-  }
 
   /** 既存の collider を全クリア */
   private clearColliders() {
@@ -779,7 +1027,9 @@ export class GameScene extends Phaser.Scene implements GameSceneProxy {
         (mode === "static" && otherMode === "dynamic")
 
       if (shouldCollide) {
-        const collider = this.physics.add.collider(img, otherImg)
+        const collider = this.physics.add.collider(img, otherImg, () => {
+          this.recordContactPair(id, otherId)
+        })
         this.activeColliders.push(collider)
         newColliders.push(collider)
 
@@ -856,24 +1106,62 @@ export class GameScene extends Phaser.Scene implements GameSceneProxy {
 
   // ─── Tween 拡張 ─────────────────────────────────────
 
-  tweenSpriteScale(id: string, scale: number, duration: number): Promise<void> {
-    const img = this.spriteMap.get(id)
-    if (!img) return Promise.resolve()
-    return new Promise((resolve) => {
-      this.tweens.add({
-        targets: img,
-        scaleX: scale,
-        scaleY: scale,
-        duration,
-        ease: "Sine.easeInOut",
-        onComplete: () => resolve(),
+  tweenSpriteScale(id: string, scale: number, duration: number, sprite?: SpriteRuntime): Promise<void> {
+    const doTween = (img: Phaser.GameObjects.Image): Promise<void> => {
+      return new Promise((resolve) => {
+        this.tweens.add({
+          targets: img,
+          scaleX: scale,
+          scaleY: scale,
+          duration,
+          ease: "Sine.easeInOut",
+          onUpdate: () => {
+            // Phaser tween のスケールを sprite.size に毎フレーム同期
+            if (sprite) sprite.size = Math.max(1, img.scaleX * 100)
+          },
+          onComplete: () => {
+            if (sprite) sprite.size = Math.max(1, scale * 100)
+            resolve()
+          },
+        })
       })
-    })
+    }
+
+    const img = this.spriteMap.get(id)
+    if (!img) {
+      // クローン直後はまだ Phaser Image が未生成。次フレームでリトライ
+      return new Promise((resolve) => {
+        this.time.delayedCall(0, () => {
+          const retryImg = this.spriteMap.get(id)
+          if (!retryImg) {
+            if (sprite) sprite.size = Math.max(1, scale * 100)
+            resolve()
+            return
+          }
+          doTween(retryImg).then(resolve)
+        })
+      })
+    }
+    return doTween(img)
   }
 
   tweenSpriteAlpha(id: string, alpha: number, duration: number): Promise<void> {
     const img = this.spriteMap.get(id)
-    if (!img) return Promise.resolve()
+    if (!img) {
+      return new Promise((resolve) => {
+        this.time.delayedCall(0, () => {
+          const retryImg = this.spriteMap.get(id)
+          if (!retryImg) { resolve(); return }
+          this.tweens.add({
+            targets: retryImg,
+            alpha,
+            duration,
+            ease: "Sine.easeInOut",
+            onComplete: () => resolve(),
+          })
+        })
+      })
+    }
     return new Promise((resolve) => {
       this.tweens.add({
         targets: img,
@@ -915,8 +1203,7 @@ export class GameScene extends Phaser.Scene implements GameSceneProxy {
     const existing = this.textAtMap.get(key)
     if (existing) existing.destroy()
 
-    const px = STAGE_WIDTH / 2 + stageX
-    const py = STAGE_HEIGHT / 2 - stageY
+    const { x: px, y: py } = stageToPhaserPoint(stageX, stageY)
     const t = this.add.text(px, py, text, {
       fontFamily: "monospace",
       fontSize: `${size}px`,
@@ -930,7 +1217,7 @@ export class GameScene extends Phaser.Scene implements GameSceneProxy {
     // テキストIDで直接検索（spriteId付きキー）
     for (const [key, t] of this.textAtMap) {
       if (key.endsWith(`:${textId}`)) {
-        t.setText(text)
+        if (t.active) t.setText(text)
         return
       }
     }
@@ -948,8 +1235,7 @@ export class GameScene extends Phaser.Scene implements GameSceneProxy {
   // ─── パーティクル ────────────────────────────────────
 
   emitParticles(stageX: number, stageY: number, count: number, color: number, speed: number) {
-    const px = STAGE_WIDTH / 2 + stageX
-    const py = STAGE_HEIGHT / 2 - stageY
+    const { x: px, y: py } = stageToPhaserPoint(stageX, stageY)
 
     // 小さな矩形テクスチャを動的生成
     const key = `particle_${color}`
@@ -991,6 +1277,9 @@ export class GameScene extends Phaser.Scene implements GameSceneProxy {
 
     for (const [, t] of this.textAtMap) t.destroy()
     this.textAtMap.clear()
+    for (const key of [...this.activeAudioMap.keys()]) {
+      this.stopAudioByKey(key)
+    }
   }
 
   /** シーンを一時停止（物理・Tween含む） */
@@ -1005,45 +1294,45 @@ export class GameScene extends Phaser.Scene implements GameSceneProxy {
 
   // ── Phase 1-2: 物理プロパティ拡張 ──────────────────────
 
-  private getBody(id: string): Phaser.Physics.Arcade.Body | null {
-    const img = this.spriteMap.get(id)
-    if (!img) return null
-    return (img.body as Phaser.Physics.Arcade.Body) ?? null
-  }
-
   setSpriteAcceleration(id: string, ax: number, ay: number) {
-    const body = this.getBody(id)
-    if (body) body.setAcceleration(ax, ay)
+    const body = this.getDynamicBody(id)
+    if (body) this.applyStageAcceleration(body, ax, ay)
   }
 
   setSpriteDrag(id: string, dx: number, dy: number) {
-    const body = this.getBody(id)
+    const body = this.getDynamicBody(id)
     if (body) body.setDrag(dx, dy)
   }
 
   setSpriteDamping(id: string, enabled: boolean) {
-    const body = this.getBody(id)
+    const body = this.getDynamicBody(id)
     if (body) body.useDamping = enabled
   }
 
   setSpriteMaxVelocity(id: string, vx: number, vy: number) {
-    const body = this.getBody(id)
+    const body = this.getDynamicBody(id)
     if (body) body.setMaxVelocity(vx, vy)
   }
 
   setSpriteAngularVelocity(id: string, deg: number) {
-    const body = this.getBody(id)
+    const body = this.getDynamicBody(id)
     if (body) body.setAngularVelocity(deg)
   }
 
   setSpriteImmovable(id: string, enabled: boolean) {
     const body = this.getBody(id)
-    if (body) body.setImmovable(enabled)
+    if (!body) return
+    if ("setImmovable" in body) {
+      body.setImmovable(enabled)
+      return
+    }
+    body.immovable = enabled
   }
 
   setSpriteMass(id: string, mass: number) {
     const body = this.getBody(id)
-    if (body) body.setMass(mass)
+    if (!body) return
+    body.setMass(mass)
   }
 
   setSpritePushable(id: string, enabled: boolean) {
@@ -1057,32 +1346,32 @@ export class GameScene extends Phaser.Scene implements GameSceneProxy {
   }
 
   getSpriteSpeed(id: string): number {
-    const body = this.getBody(id)
+    const body = this.getDynamicBody(id)
     if (!body) return 0
     return body.speed
   }
 
   moveToObject(id: string, targetX: number, targetY: number, speed: number) {
-    const img = this.spriteMap.get(id)
+    const img = this.spriteMap.get(id) as DynamicSceneImage | undefined
+    if (this.getPhysicsMode(id) !== "dynamic") return
     if (!img) return
-    const px = STAGE_WIDTH / 2 + targetX
-    const py = STAGE_HEIGHT / 2 - targetY
+    const { x: px, y: py } = stageToPhaserPoint(targetX, targetY)
     this.physics.moveTo(img, px, py, speed)
   }
 
   accelerateToObject(id: string, targetX: number, targetY: number, acceleration: number) {
-    const img = this.spriteMap.get(id)
+    const img = this.spriteMap.get(id) as DynamicSceneImage | undefined
+    if (this.getPhysicsMode(id) !== "dynamic") return
     if (!img) return
-    const px = STAGE_WIDTH / 2 + targetX
-    const py = STAGE_HEIGHT / 2 - targetY
+    const { x: px, y: py } = stageToPhaserPoint(targetX, targetY)
     this.physics.accelerateTo(img, px, py, acceleration)
   }
 
   velocityFromAngle(id: string, angle: number, speed: number) {
-    const body = this.getBody(id)
+    const body = this.getDynamicBody(id)
     if (!body) return
-    const rad = Phaser.Math.DegToRad(angle)
-    this.physics.velocityFromRotation(rad, speed, body.velocity)
+    const velocity = directionToStageVector(angle, speed)
+    this.applyStageVelocity(body, velocity.x, velocity.y)
   }
 
   // ── Phase 3: 入力拡張 ──────────────────────────────────
@@ -1107,10 +1396,7 @@ export class GameScene extends Phaser.Scene implements GameSceneProxy {
     img.setInteractive({ draggable: true })
     img.on("drag", (_pointer: Phaser.Input.Pointer, dragX: number, dragY: number) => {
       img.setPosition(dragX, dragY)
-      this.dragPositions.set(id, {
-        x: dragX - STAGE_WIDTH / 2,
-        y: STAGE_HEIGHT / 2 - dragY,
-      })
+      this.dragPositions.set(id, phaserToStagePoint(dragX, dragY))
     })
   }
 
@@ -1121,21 +1407,21 @@ export class GameScene extends Phaser.Scene implements GameSceneProxy {
   // ── Phase 4: Phaser API 拡張 ──
 
   setSpriteBodySize(id: string, width: number, height: number) {
-    const img = this.spriteMap.get(id)
-    if (!img?.body) return
-    ;(img.body as Phaser.Physics.Arcade.Body).setSize(width, height)
+    const body = this.getBody(id)
+    if (!body) return
+    body.setSize(width, height)
   }
 
   setSpriteBodyOffset(id: string, ox: number, oy: number) {
-    const img = this.spriteMap.get(id)
-    if (!img?.body) return
-    ;(img.body as Phaser.Physics.Arcade.Body).setOffset(ox, oy)
+    const body = this.getBody(id)
+    if (!body) return
+    body.setOffset(ox, oy)
   }
 
   setSpriteCircle(id: string, radius: number) {
-    const img = this.spriteMap.get(id)
-    if (!img?.body) return
-    ;(img.body as Phaser.Physics.Arcade.Body).setCircle(radius)
+    const body = this.getBody(id)
+    if (!body) return
+    body.setCircle(radius)
   }
 
   setSpriteOrigin(id: string, x: number, y: number) {
@@ -1152,6 +1438,49 @@ export class GameScene extends Phaser.Scene implements GameSceneProxy {
 
   setBackgroundColor(color: string) {
     this.cameras.main.setBackgroundColor(color)
+  }
+
+  playSpriteSound(id: string, soundName: string, options?: { loop?: boolean }): boolean {
+    if (typeof Audio === "undefined") return false
+    const sound = this.resolveSpriteSound(id, soundName)
+    if (!sound?.dataUrl) return false
+
+    const key = this.audioKey(id, soundName)
+    this.stopAudioByKey(key)
+
+    const audio = new Audio(sound.dataUrl)
+    audio.loop = options?.loop ?? false
+    audio.preload = "auto"
+    audio.volume = this.soundVolumeMap.get(key) ?? 1
+    audio.addEventListener("ended", () => {
+      if (!audio.loop) {
+        this.activeAudioMap.delete(key)
+      }
+    })
+    this.activeAudioMap.set(key, audio)
+    void audio.play().catch(() => undefined)
+    return true
+  }
+
+  stopSpriteSound(id: string, soundName: string) {
+    this.stopAudioByKey(this.audioKey(id, soundName))
+  }
+
+  setSpriteSoundVolume(id: string, soundName: string, volume: number) {
+    const key = this.audioKey(id, soundName)
+    this.soundVolumeMap.set(key, volume)
+    const audio = this.activeAudioMap.get(key)
+    if (audio) {
+      audio.volume = volume
+    }
+  }
+
+  private stopAudioByKey(key: string) {
+    const audio = this.activeAudioMap.get(key)
+    if (!audio) return
+    audio.pause()
+    audio.currentTime = 0
+    this.activeAudioMap.delete(key)
   }
 
   /** ホイールイベントの初期化（create() から呼ばれる） */

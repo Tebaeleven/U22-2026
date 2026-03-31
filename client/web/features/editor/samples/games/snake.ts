@@ -26,6 +26,16 @@ export const snakeGame: SampleProject = {
   ],
   pseudocode: `
 class アタマ {
+  var dir = 3
+  var moveTimer = 0
+  var speed = 8
+  var score = 0
+  var alive = 1
+  var bodyLen = 0
+  var foodX = 288
+  var foodY = 144
+  var relayX = 0
+  var relayY = 0
   onCreate() {
     this.setPhysics("dynamic")
     this.setAllowGravity("off")
@@ -115,6 +125,8 @@ class アタマ {
     if (this.speed > 3) {
       this.speed += -1
     }
+    カラダ.relayX = this.relayX
+    カラダ.relayY = this.relayY
     this.createClone("カラダ")
     this.foodX += 336
     if (this.foodX > 700) {
@@ -129,6 +141,10 @@ class アタマ {
 }
 
 class カラダ {
+  var oldX = relayX
+  var oldY = relayY
+  var relayX = oldX
+  var relayY = oldY
   onCreate() {
     this.hide()
   }
@@ -138,6 +154,8 @@ class カラダ {
     this.setPhysics("dynamic")
     this.setAllowGravity("off")
     this.setPosition(this.relayX, this.relayY)
+    this.oldX = this.relayX
+    this.oldY = this.relayY
     this.tweenScale(1.3, 0.15)
   }
 
@@ -160,7 +178,7 @@ class エサ {
     this.setAngle(this.angle + 2)
   }
   onEvent("food-eaten") {
-    this.setPosition(this.foodX, this.foodY)
+    this.setPosition(アタマ.foodX, アタマ.foodY)
     this.emitParticles(this.x, this.y, 15, "#33ff33", 150)
     this.tweenScale(1.5, 0.2)
   }

@@ -6,12 +6,13 @@ export type PhysicsMode = "dynamic" | "static" | "none"
 /** GameScene の物理関連メソッドへのプロキシ */
 export interface GameSceneProxy {
   checkOverlap(idA: string, idB: string): boolean
+  readContactPairs(): { idA: string; idB: string }[]
   isOnGround(spriteId: string): boolean
   getMousePosition(): { x: number; y: number }
   setGravity(y: number): void
   setSpriteVelocity(id: string, vx: number, vy: number): void
   setSpritePhysicsMode(id: string, mode: PhysicsMode): void
-  readPhysicsPositions(): { id: string; x: number; y: number; vx: number; vy: number }[]
+  readPhysicsPositions(): { id: string; x: number; y: number; vx: number; vy: number; grounded: boolean }[]
   setWorldBounds(width: number, height: number): void
   /** スプライトのバウンス(反発係数)を設定 */
   setSpriteBounce(id: string, bounceX: number, bounceY: number): void
@@ -19,8 +20,6 @@ export interface GameSceneProxy {
   setSpriteCollideWorldBounds(id: string, enabled: boolean): void
   /** スプライトの物理ボディの有効/無効を切り替え */
   setSpriteBodyEnabled(id: string, enabled: boolean): void
-  /** 衝突コールバックを登録（2つのスプライト間の衝突時にイベントを発火） */
-  registerCollisionCallback(idA: string, idB: string, callback: () => void): void
   /** クローン用：スプライトを削除 */
   removeSprite(id: string): void
   /** スプライトの位置を直接設定（dynamic スプライトの gotoxy 用） */
@@ -56,7 +55,7 @@ export interface GameSceneProxy {
   cameraFade(duration: number): Promise<void>
   // ── Tween 拡張 ──
   /** スプライトのスケールを Tween でアニメーション */
-  tweenSpriteScale(id: string, scale: number, duration: number): Promise<void>
+  tweenSpriteScale(id: string, scale: number, duration: number, sprite?: SpriteRuntime): Promise<void>
   /** スプライトの透明度を Tween でアニメーション */
   tweenSpriteAlpha(id: string, alpha: number, duration: number): Promise<void>
   /** スプライトの角度を Tween でアニメーション */
@@ -130,6 +129,12 @@ export interface GameSceneProxy {
   setSpriteScrollFactor(id: string, x: number, y: number): void
   /** 背景色を設定 */
   setBackgroundColor(color: string): void
+  /** スプライトに紐づくサウンドを再生。実アセットが見つからない場合は false を返す */
+  playSpriteSound(id: string, soundName: string, options?: { loop?: boolean }): boolean
+  /** スプライトに紐づくサウンドを停止 */
+  stopSpriteSound(id: string, soundName: string): void
+  /** スプライトに紐づくサウンド音量を設定 */
+  setSpriteSoundVolume(id: string, soundName: string, volume: number): void
 }
 
 export type BlockArgs = Record<string, unknown>
@@ -164,6 +169,10 @@ export interface BlockUtil {
   getLoopVariable: (name: string) => unknown
   /** 変数の値を設定（Observer 通知をトリガー） */
   setVariable: (name: string, value: unknown) => void
+  /** 他スプライトの変数の値を取得 */
+  getSpriteVariable: (spriteName: string, varName: string) => unknown
+  /** 他スプライトの変数の値を設定（Observer 通知をトリガー） */
+  setSpriteVariable: (spriteName: string, varName: string, value: unknown) => void
   /** 値付きイベントを送信 */
   sendEvent: (name: string, data: unknown) => void
   /** 変数監視を停止 */
@@ -279,12 +288,18 @@ export interface SpriteRuntime {
   costumeIndex: number
   /** コスチューム総数 */
   costumeCount: number
+  /** コスチューム名リスト（名前でのコスチューム切り替え用） */
+  costumeNames: string[]
+  /** コスチュームサイズリスト（[width, height] のペア） */
+  costumeSizes: [number, number][]
   /** 物理モード: none=従来通りVMが位置管理, static=衝突有効だが不動, dynamic=重力・速度・衝突応答あり */
   physicsMode: PhysicsMode
   /** X方向速度（physicsMode === "dynamic" 時に使用） */
   velocityX: number
   /** Y方向速度（physicsMode === "dynamic" 時に使用） */
   velocityY: number
+  /** 接地中か（scene から逆同期される） */
+  grounded: boolean
   /** クローン元のスプライトID（クローンでなければ undefined） */
   parentId?: string
   /** 物理ボディが有効か */
@@ -303,6 +318,14 @@ export interface SpriteRuntime {
   flipX: boolean
   /** 描画回転角度（direction とは独立） */
   angle: number
+  /** 描画原点 */
+  originX: number
+  originY: number
+  /** スクロールファクター */
+  scrollFactorX: number
+  scrollFactorY: number
+  /** スケール tween 実行中フラグ（updateSprites でのスケール上書きをスキップする） */
+  scaleTweening: boolean
   // ── Phase 1-2: 物理プロパティ拡張 ──
   /** X方向加速度 (px/s²) */
   accelerationX: number

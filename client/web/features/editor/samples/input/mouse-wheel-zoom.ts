@@ -17,6 +17,7 @@ export const mouseWheelZoom: SampleProject = {
   ],
   pseudocode: `
 class 中心 {
+  var zoom = 1
   onCreate() {
     this.zoom = 1
     this.addTextAt("info", "Scroll to zoom", -900, 490, 28, "#ffffff")

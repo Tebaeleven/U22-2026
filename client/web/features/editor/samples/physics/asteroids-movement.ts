@@ -14,6 +14,7 @@ export const asteroidsMovement: SampleProject = {
   ],
   pseudocode: `
 class 宇宙船 {
+  var speed = 0
   onCreate() {
     this.setPhysics("dynamic")
     this.setAllowGravity(false)

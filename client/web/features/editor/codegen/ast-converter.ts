@@ -1,11 +1,15 @@
-// ClassProgramAST → ProgramAST 変換レイヤー
+// ClassProgramAST → SemanticProgramIR 変換レイヤー
 
-import type { ProgramAST, ScriptAST, HatNode, StatementNode, ExprNode } from "./ast-types"
+import type { ProgramAST, SemanticProgramIR, ScriptAST, HatNode, StatementNode, ExprNode } from "./ast-types"
 import type { ClassProgramAST, ClassAST, MethodAST, MethodKind } from "./class-ast-types"
 
 /** ClassProgramAST を既存の ProgramAST に変換する */
 export function classASTToLegacyAST(program: ClassProgramAST): ProgramAST {
   return program.map(cls => classToSprite(cls))
+}
+
+export function classASTToSemanticIR(program: ClassProgramAST): SemanticProgramIR {
+  return classASTToLegacyAST(program)
 }
 
 function classToSprite(cls: ClassAST): ProgramAST[number] {
@@ -32,13 +36,13 @@ function classToSprite(cls: ClassAST): ProgramAST[number] {
   // onCreate メソッドの先頭にフィールド初期化を挿入
   const scripts: ScriptAST[] = []
   for (const method of cls.methods) {
-    const script = methodToScript(method)
+    const generatedScripts = methodToScripts(method)
 
     if (method.kind.type === "onCreate" && fieldInits.length > 0) {
-      script.body = [...fieldInits, ...script.body]
+      generatedScripts[0].body = [...fieldInits, ...generatedScripts[0].body]
     }
 
-    scripts.push(script)
+    scripts.push(...generatedScripts)
   }
 
   // onCreate がない場合でもフィールド初期化が必要ならスクリプトを生成
@@ -53,9 +57,7 @@ function classToSprite(cls: ClassAST): ProgramAST[number] {
   }
 }
 
-function methodToScript(method: MethodAST): ScriptAST {
-  const hat = methodKindToHat(method.kind)
-
+function buildMethodBody(method: MethodAST): StatementNode[] {
   let body: StatementNode[]
   if (method.kind.type === "onUpdate") {
     body = [{ type: "forever", body: method.body }]
@@ -73,7 +75,20 @@ function methodToScript(method: MethodAST): ScriptAST {
     body = method.body
   }
 
-  return { hat, body }
+  return body
+}
+
+function methodToScripts(method: MethodAST): ScriptAST[] {
+  const body = buildMethodBody(method)
+
+  if (method.kind.type === "onUpdate") {
+    return [
+      { hat: { type: "flagClicked" }, body },
+      { hat: { type: "clone" }, body: structuredClone(body) },
+    ]
+  }
+
+  return [{ hat: methodKindToHat(method.kind), body }]
 }
 
 function methodKindToHat(kind: MethodKind): HatNode {

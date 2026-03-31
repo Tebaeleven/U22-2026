@@ -29,10 +29,10 @@ class プレイヤー {
   onUpdate() {
     this.setAcceleration(0, 0)
     if (this.isKeyPressed("w")) {
-      this.setAccelerationY(-800)
+      this.setAccelerationY(800)
     }
     if (this.isKeyPressed("s")) {
-      this.setAccelerationY(800)
+      this.setAccelerationY(-800)
     }
     if (this.isKeyPressed("a")) {
       this.setAccelerationX(-800)
